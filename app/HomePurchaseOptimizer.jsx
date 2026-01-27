@@ -1543,6 +1543,267 @@ export default function HomePurchaseOptimizer() {
     );
   };
 
+  // Tax breakdown calculations for Tax tab
+  const taxBreakdown = useMemo(() => {
+    const fedTaxBrackets = filingStatus === 'married'
+      ? [{min:0,max:23200,r:0.10},{min:23200,max:94300,r:0.12},{min:94300,max:201050,r:0.22},{min:201050,max:383900,r:0.24},{min:383900,max:487450,r:0.32},{min:487450,max:731200,r:0.35},{min:731200,max:Infinity,r:0.37}]
+      : [{min:0,max:11600,r:0.10},{min:11600,max:47150,r:0.12},{min:47150,max:100525,r:0.22},{min:100525,max:191950,r:0.24},{min:191950,max:243725,r:0.32},{min:243725,max:609350,r:0.35},{min:609350,max:Infinity,r:0.37}];
+
+    const caTaxBrackets = filingStatus === 'married'
+      ? [{min:0,max:20824,r:0.01},{min:20824,max:49368,r:0.02},{min:49368,max:77918,r:0.04},{min:77918,max:108162,r:0.06},{min:108162,max:136700,r:0.08},{min:136700,max:698274,r:0.093},{min:698274,max:837922,r:0.103},{min:837922,max:1396542,r:0.113},{min:1396542,max:Infinity,r:0.123}]
+      : [{min:0,max:10412,r:0.01},{min:10412,max:24684,r:0.02},{min:24684,max:38959,r:0.04},{min:38959,max:54081,r:0.06},{min:54081,max:68350,r:0.08},{min:68350,max:349137,r:0.093},{min:349137,max:418961,r:0.103},{min:418961,max:698271,r:0.113},{min:698271,max:Infinity,r:0.123}];
+
+    const mentalHealthThreshold = filingStatus === 'married' ? 2000000 : 1000000;
+    const hasMentalHealthTax = grossIncome > mentalHealthThreshold;
+
+    // Property tax estimate
+    const annualPropTax = homePrice * SF.propTaxRate + SF.parcelTax;
+
+    // SALT calculations
+    const totalSALT = stateTax + annualPropTax;
+    const federalSALTDeduction = Math.min(totalSALT, 10000);
+    const saltLost = Math.max(0, totalSALT - 10000);
+    const caSALTDeduction = totalSALT; // CA has no cap
+
+    // Mortgage scenarios for comparison
+    const mortgageAmount = homePrice * 0.8; // Assume 20% down
+    const annualMortgageInterest = mortgageAmount * (mortgageRate / 100);
+    const fedDeductibleMortgageInt = Math.min(mortgageAmount, 750000) * (mortgageRate / 100);
+    const caDeductibleMortgageInt = Math.min(mortgageAmount, 1000000) * (mortgageRate / 100);
+    const mortgageIntLostFederal = annualMortgageInterest - fedDeductibleMortgageInt;
+
+    // Itemization analysis
+    const fedItemized = fedDeductibleMortgageInt + federalSALTDeduction;
+    const caItemized = caDeductibleMortgageInt + caSALTDeduction;
+    const shouldItemizeFed = fedItemized > stdDeduction;
+    const caStd = filingStatus === 'married' ? 10726 : 5363;
+    const shouldItemizeCA = caItemized > caStd;
+
+    // Tax savings from homeownership
+    const fedTaxSavings = shouldItemizeFed ? (fedItemized - stdDeduction) * fedRate : 0;
+    const caTaxSavings = shouldItemizeCA ? (caItemized - caStd) * caRate : 0;
+    const totalTaxSavings = fedTaxSavings + caTaxSavings;
+
+    return {
+      fedTaxBrackets,
+      caTaxBrackets,
+      fedRate,
+      caRate,
+      hasMentalHealthTax,
+      mentalHealthThreshold,
+      annualPropTax,
+      totalSALT,
+      federalSALTDeduction,
+      saltLost,
+      caSALTDeduction,
+      mortgageAmount,
+      annualMortgageInterest,
+      fedDeductibleMortgageInt,
+      caDeductibleMortgageInt,
+      mortgageIntLostFederal,
+      fedItemized,
+      caItemized,
+      shouldItemizeFed,
+      shouldItemizeCA,
+      caStd,
+      fedTaxSavings,
+      caTaxSavings,
+      totalTaxSavings
+    };
+  }, [grossIncome, filingStatus, homePrice, mortgageRate, stateTax, fedRate, caRate, stdDeduction]);
+
+  const renderTax = () => {
+    const tb = taxBreakdown;
+
+    return (
+      <>
+        {/* Tax Rate Breakdown */}
+        <div style={s.card}>
+          <h3 style={{ ...s.section, marginTop: 0 }}>Your Marginal Tax Rates</h3>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', marginBottom: '20px' }}>
+            <div style={{ background: 'rgba(59,130,246,0.1)', borderRadius: '12px', padding: '20px', textAlign: 'center', border: '1px solid rgba(59,130,246,0.3)' }}>
+              <div style={{ fontSize: '0.75rem', color: '#60a5fa', textTransform: 'uppercase', marginBottom: '8px' }}>Federal</div>
+              <div style={{ fontSize: '2rem', fontWeight: '700', color: '#fff' }}>{fmtPct(fedRate)}</div>
+              <div style={{ fontSize: '0.8rem', color: '#8b8ba7', marginTop: '4px' }}>Top bracket for {fmt$(grossIncome)}</div>
+            </div>
+            <div style={{ background: 'rgba(234,179,8,0.1)', borderRadius: '12px', padding: '20px', textAlign: 'center', border: '1px solid rgba(234,179,8,0.3)' }}>
+              <div style={{ fontSize: '0.75rem', color: '#eab308', textTransform: 'uppercase', marginBottom: '8px' }}>California</div>
+              <div style={{ fontSize: '2rem', fontWeight: '700', color: '#fff' }}>{fmtPct(caRate)}</div>
+              <div style={{ fontSize: '0.8rem', color: '#8b8ba7', marginTop: '4px' }}>
+                {tb.hasMentalHealthTax ? 'Includes 1% Mental Health Tax' : `Top bracket for ${fmt$(grossIncome)}`}
+              </div>
+            </div>
+            <div style={{ background: 'linear-gradient(135deg, rgba(249,115,22,0.15), rgba(234,179,8,0.1))', borderRadius: '12px', padding: '20px', textAlign: 'center', border: '2px solid rgba(249,115,22,0.4)' }}>
+              <div style={{ fontSize: '0.75rem', color: '#f97316', textTransform: 'uppercase', marginBottom: '8px' }}>Combined</div>
+              <div style={{ fontSize: '2rem', fontWeight: '700', color: '#fff' }}>{fmtPct(combRate)}</div>
+              <div style={{ fontSize: '0.8rem', color: '#8b8ba7', marginTop: '4px' }}>Marginal rate on next $1</div>
+            </div>
+          </div>
+
+          {tb.hasMentalHealthTax && (
+            <div style={{ background: 'rgba(234,179,8,0.1)', border: '1px solid rgba(234,179,8,0.3)', borderRadius: '8px', padding: '12px', fontSize: '0.85rem', color: '#eab308' }}>
+              <strong>CA Mental Health Services Tax:</strong> You pay an additional 1% on income over {fmt$(tb.mentalHealthThreshold)} ({filingStatus === 'married' ? 'married' : 'single'}).
+            </div>
+          )}
+        </div>
+
+        {/* SALT Deduction */}
+        <div style={s.card}>
+          <h3 style={{ ...s.section, marginTop: 0 }}>SALT Deduction (State & Local Taxes)</h3>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
+            <div>
+              <div style={{ fontSize: '0.85rem', color: '#8b8ba7', marginBottom: '12px' }}>Your SALT Components</div>
+              <div style={s.costLine}><span>CA State Income Tax:</span><span>{fmt$(stateTax)}</span></div>
+              <div style={s.costLine}><span>Property Tax (estimated):</span><span>{fmt$(tb.annualPropTax)}</span></div>
+              <div style={{ ...s.costLine, fontWeight: '600', borderTop: '2px solid rgba(255,255,255,0.2)', paddingTop: '12px', marginTop: '8px' }}>
+                <span>Total SALT:</span><span>{fmt$(tb.totalSALT)}</span>
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: '0.85rem', color: '#8b8ba7', marginBottom: '12px' }}>Deductibility</div>
+              <div style={s.costLine}>
+                <span style={{ color: '#60a5fa' }}>Federal (capped at $10K):</span>
+                <span style={{ color: '#60a5fa' }}>{fmt$(tb.federalSALTDeduction)}</span>
+              </div>
+              <div style={s.costLine}>
+                <span style={{ color: '#f87171' }}>Lost to SALT cap:</span>
+                <span style={{ color: '#f87171' }}>{fmt$(tb.saltLost)}</span>
+              </div>
+              <div style={s.costLine}>
+                <span style={{ color: '#4ade80' }}>California (no cap):</span>
+                <span style={{ color: '#4ade80' }}>{fmt$(tb.caSALTDeduction)}</span>
+              </div>
+            </div>
+          </div>
+          <div style={{ marginTop: '16px', padding: '12px', background: 'rgba(248,113,113,0.1)', border: '1px solid rgba(248,113,113,0.3)', borderRadius: '8px', fontSize: '0.85rem', color: '#f87171' }}>
+            <strong>SALT Cap Impact:</strong> You lose {fmt$(tb.saltLost)} in federal deductions due to the $10,000 TCJA cap. This costs you approximately {fmt$(tb.saltLost * fedRate)} in additional federal taxes annually.
+          </div>
+        </div>
+
+        {/* Mortgage Interest Deduction */}
+        <div style={s.card}>
+          <h3 style={{ ...s.section, marginTop: 0 }}>Mortgage Interest Deduction</h3>
+          <p style={{ color: '#8b8ba7', fontSize: '0.85rem', marginBottom: '16px' }}>Based on {fmt$(tb.mortgageAmount)} mortgage (80% LTV) at {mortgageRate}%</p>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
+            <div style={{ background: 'rgba(59,130,246,0.1)', borderRadius: '12px', padding: '20px', border: '1px solid rgba(59,130,246,0.3)' }}>
+              <div style={{ fontSize: '0.85rem', color: '#60a5fa', fontWeight: '600', marginBottom: '12px' }}>Federal Rules ($750K Limit)</div>
+              <div style={s.costLine}><span>Annual Interest:</span><span>{fmt$(tb.annualMortgageInterest)}</span></div>
+              <div style={s.costLine}><span style={{ color: '#4ade80' }}>Deductible:</span><span style={{ color: '#4ade80' }}>{fmt$(tb.fedDeductibleMortgageInt)}</span></div>
+              {tb.mortgageIntLostFederal > 0 && (
+                <div style={s.costLine}><span style={{ color: '#f87171' }}>Not Deductible:</span><span style={{ color: '#f87171' }}>{fmt$(tb.mortgageIntLostFederal)}</span></div>
+              )}
+            </div>
+            <div style={{ background: 'rgba(74,222,128,0.1)', borderRadius: '12px', padding: '20px', border: '1px solid rgba(74,222,128,0.3)' }}>
+              <div style={{ fontSize: '0.85rem', color: '#4ade80', fontWeight: '600', marginBottom: '12px' }}>California Rules ($1M Limit)</div>
+              <div style={s.costLine}><span>Annual Interest:</span><span>{fmt$(tb.annualMortgageInterest)}</span></div>
+              <div style={s.costLine}><span style={{ color: '#4ade80' }}>Deductible:</span><span style={{ color: '#4ade80' }}>{fmt$(tb.caDeductibleMortgageInt)}</span></div>
+              <div style={{ fontSize: '0.8rem', color: '#8b8ba7', marginTop: '8px' }}>CA did not conform to TCJA</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Itemized vs Standard */}
+        <div style={s.card}>
+          <h3 style={{ ...s.section, marginTop: 0 }}>Should You Itemize?</h3>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
+            <div>
+              <div style={{ fontSize: '0.9rem', color: '#60a5fa', fontWeight: '600', marginBottom: '12px' }}>Federal</div>
+              <div style={s.costLine}><span>Your Itemized Total:</span><span>{fmt$(tb.fedItemized)}</span></div>
+              <div style={s.costLine}><span>Standard Deduction:</span><span>{fmt$(stdDeduction)}</span></div>
+              <div style={{ marginTop: '12px', padding: '10px', borderRadius: '8px', textAlign: 'center',
+                background: tb.shouldItemizeFed ? 'rgba(74,222,128,0.15)' : 'rgba(248,113,113,0.15)',
+                border: tb.shouldItemizeFed ? '1px solid rgba(74,222,128,0.4)' : '1px solid rgba(248,113,113,0.4)',
+                color: tb.shouldItemizeFed ? '#4ade80' : '#f87171'
+              }}>
+                {tb.shouldItemizeFed ? '✓ Itemize (saves ' + fmt$(tb.fedItemized - stdDeduction) + ')' : '✗ Take Standard Deduction'}
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: '0.9rem', color: '#eab308', fontWeight: '600', marginBottom: '12px' }}>California</div>
+              <div style={s.costLine}><span>Your Itemized Total:</span><span>{fmt$(tb.caItemized)}</span></div>
+              <div style={s.costLine}><span>Standard Deduction:</span><span>{fmt$(tb.caStd)}</span></div>
+              <div style={{ marginTop: '12px', padding: '10px', borderRadius: '8px', textAlign: 'center',
+                background: tb.shouldItemizeCA ? 'rgba(74,222,128,0.15)' : 'rgba(248,113,113,0.15)',
+                border: tb.shouldItemizeCA ? '1px solid rgba(74,222,128,0.4)' : '1px solid rgba(248,113,113,0.4)',
+                color: tb.shouldItemizeCA ? '#4ade80' : '#f87171'
+              }}>
+                {tb.shouldItemizeCA ? '✓ Itemize (saves ' + fmt$(tb.caItemized - tb.caStd) + ')' : '✗ Take Standard Deduction'}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Annual Tax Savings Summary */}
+        <div style={{ background: 'linear-gradient(135deg, rgba(74,222,128,0.15), rgba(34,197,94,0.1))', borderRadius: '20px', padding: '28px', border: '2px solid rgba(74,222,128,0.4)', marginBottom: '20px' }}>
+          <h3 style={{ fontSize: '1.1rem', fontWeight: '600', color: '#4ade80', marginTop: 0, marginBottom: '20px' }}>💰 Estimated Annual Tax Savings from Homeownership</h3>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '0.75rem', color: '#8b8ba7', marginBottom: '4px' }}>Federal Savings</div>
+              <div style={{ fontSize: '1.5rem', fontWeight: '700', color: '#4ade80' }}>{fmt$(tb.fedTaxSavings)}</div>
+            </div>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '0.75rem', color: '#8b8ba7', marginBottom: '4px' }}>California Savings</div>
+              <div style={{ fontSize: '1.5rem', fontWeight: '700', color: '#4ade80' }}>{fmt$(tb.caTaxSavings)}</div>
+            </div>
+            <div style={{ textAlign: 'center', background: 'rgba(0,0,0,0.2)', borderRadius: '12px', padding: '12px' }}>
+              <div style={{ fontSize: '0.75rem', color: '#8b8ba7', marginBottom: '4px' }}>Total Annual Savings</div>
+              <div style={{ fontSize: '1.8rem', fontWeight: '700', color: '#fff' }}>{fmt$(tb.totalTaxSavings)}</div>
+            </div>
+          </div>
+          <div style={{ marginTop: '16px', fontSize: '0.85rem', color: '#8b8ba7', textAlign: 'center' }}>
+            Compared to renting (taking standard deduction) • {fmt$(tb.totalTaxSavings / 12)}/month effective savings
+          </div>
+        </div>
+
+        {/* Investment Interest Rules */}
+        <div style={s.card}>
+          <h3 style={{ ...s.section, marginTop: 0 }}>Investment Interest Deduction Rules</h3>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
+            <div>
+              <div style={{ fontSize: '0.9rem', color: '#4ade80', fontWeight: '600', marginBottom: '12px' }}>✓ What IS Deductible</div>
+              <ul style={{ margin: 0, paddingLeft: '20px', color: '#c0c0d0', fontSize: '0.85rem', lineHeight: '1.8' }}>
+                <li>Interest on margin loans (if used for investments)</li>
+                <li>HELOC interest (if proceeds invested)</li>
+                <li>Cash-out refi interest (cash-out portion only)</li>
+                <li>Limited to your net investment income</li>
+              </ul>
+            </div>
+            <div>
+              <div style={{ fontSize: '0.9rem', color: '#f87171', fontWeight: '600', marginBottom: '12px' }}>✗ What Counts as Investment Income</div>
+              <ul style={{ margin: 0, paddingLeft: '20px', color: '#c0c0d0', fontSize: '0.85rem', lineHeight: '1.8' }}>
+                <li>Dividends (ordinary and qualified)</li>
+                <li>Interest income</li>
+                <li>Short-term capital gains</li>
+                <li><strong>NOT</strong> unrealized appreciation</li>
+                <li><strong>NOT</strong> long-term gains (unless you elect)</li>
+              </ul>
+            </div>
+          </div>
+          <div style={{ marginTop: '16px', padding: '12px', background: 'rgba(139,92,246,0.1)', border: '1px solid rgba(139,92,246,0.3)', borderRadius: '8px', fontSize: '0.85rem', color: '#a78bfa' }}>
+            <strong>Your Deduction Limit:</strong> Based on {dividendYield}% dividend yield, you can deduct up to {fmt$((stockPortfolio + homePrice * 0.5) * dividendYield / 100)} in investment interest annually.
+          </div>
+        </div>
+
+        {/* Quick Reference */}
+        <div style={s.card}>
+          <h3 style={{ ...s.section, marginTop: 0 }}>Quick Reference: Key Tax Numbers</h3>
+          <table style={s.table}>
+            <tbody>
+              <tr><td style={s.td}>Federal Standard Deduction ({filingStatus})</td><td style={{ ...s.td, textAlign: 'right' }}>{fmt$(stdDeduction)}</td></tr>
+              <tr><td style={s.td}>California Standard Deduction ({filingStatus})</td><td style={{ ...s.td, textAlign: 'right' }}>{fmt$(tb.caStd)}</td></tr>
+              <tr><td style={s.td}>SALT Cap (Federal)</td><td style={{ ...s.td, textAlign: 'right' }}>{fmt$(10000)}</td></tr>
+              <tr><td style={s.td}>Mortgage Interest Limit (Federal)</td><td style={{ ...s.td, textAlign: 'right' }}>{fmt$(750000)}</td></tr>
+              <tr><td style={s.td}>Mortgage Interest Limit (California)</td><td style={{ ...s.td, textAlign: 'right' }}>{fmt$(1000000)}</td></tr>
+              <tr><td style={s.td}>CA Mental Health Tax Threshold ({filingStatus})</td><td style={{ ...s.td, textAlign: 'right' }}>{fmt$(tb.mentalHealthThreshold)}</td></tr>
+              <tr style={{ background: 'rgba(249,115,22,0.1)' }}><td style={{ ...s.td, fontWeight: '600' }}>Your Combined Marginal Rate</td><td style={{ ...s.td, textAlign: 'right', fontWeight: '600', color: '#f97316' }}>{fmtPct(combRate)}</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </>
+    );
+  };
+
   return (
     <div style={s.container}>
       <header style={s.header}>
@@ -1587,12 +1848,14 @@ export default function HomePurchaseOptimizer() {
             <button style={{ ...s.tab, ...(activeTab === 'optimize' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('optimize')}>Optimized Plan</button>
             <button style={{ ...s.tab, ...(activeTab === 'scenarios' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('scenarios')}>Compare Scenarios</button>
             <button style={{ ...s.tab, ...(activeTab === 'manual' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('manual')}>Manual Mode</button>
+            <button style={{ ...s.tab, ...(activeTab === 'tax' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('tax')}>Tax Analysis</button>
             <button style={{ ...s.tab, ...(activeTab === 'holding' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('holding')}>Holding Period</button>
           </div>
 
           {activeTab === 'optimize' && renderOptimize()}
           {activeTab === 'scenarios' && renderScenarios()}
           {activeTab === 'manual' && renderManual()}
+          {activeTab === 'tax' && renderTax()}
           {activeTab === 'holding' && renderHolding()}
         </main>
       </div>
