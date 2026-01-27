@@ -87,85 +87,136 @@ const calcTxCosts = (price, loan) => {
 
 // Core scenario calculation - FIXED VERSION
 const calcScenario = (params) => {
-  const { homePrice, cashDown, marginLoan, helocAmount, mortgageRate, loanTerm, appreciationRate, investmentReturn, monthlyRent, marginRate, helocRate, fedRate, caRate, stateTax, stdDeduction } = params;
+  const { homePrice, cashDown, marginLoan, helocAmount, cashOutRefiAmount = 0, mortgageRate, cashOutRefiRate = 0.0675, loanTerm, appreciationRate, investmentReturn, dividendYield = 0.02, monthlyRent, marginRate, helocRate, fedRate, caRate, stateTax, stdDeduction, filingStatus = 'married' } = params;
   
   // Determine if this is a cash purchase (no mortgage)
   const totalEquityInput = cashDown + marginLoan;
   const needsMortgage = totalEquityInput < homePrice;
-  const mortgageLoan = needsMortgage ? homePrice - totalEquityInput : 0;
-  
+  const baseMortgageLoan = needsMortgage ? homePrice - totalEquityInput : 0;
+
+  // Cash-out refinance: replaces mortgage with larger loan, extracts equity for investment
+  // If cashOutRefiAmount > 0, we're doing a cash-out refi strategy
+  const isCashOutRefi = cashOutRefiAmount > 0;
+  const actualCashOutAmount = isCashOutRefi ? cashOutRefiAmount : 0;
+  const totalRefiLoan = isCashOutRefi ? baseMortgageLoan + actualCashOutAmount : 0;
+  const mortgageLoan = isCashOutRefi ? 0 : baseMortgageLoan; // If refi, no separate mortgage
+  const effectiveMortgageRate = isCashOutRefi ? cashOutRefiRate : mortgageRate;
+
   // HELOC can only be taken on a home you own outright (no mortgage)
   // OR on the equity portion of a mortgaged home (home equity)
-  const actualHELOC = !needsMortgage ? helocAmount : 0; // Only if no mortgage
-  
+  // Cash-out refi is mutually exclusive with HELOC
+  const actualHELOC = (!needsMortgage && !isCashOutRefi) ? helocAmount : 0;
+
   const propTax = homePrice * SF.propTaxRate + SF.parcelTax;
   const insurance = homePrice * 0.003;
   const maintenance = homePrice * 0.01;
-  const pmi = calcPMI(mortgageLoan, homePrice);
-  const tx = calcTxCosts(homePrice, mortgageLoan);
-  const amort = genAmort(mortgageLoan, mortgageRate, loanTerm);
-  
+  const totalLoanForPMI = isCashOutRefi ? totalRefiLoan : mortgageLoan;
+  const pmi = calcPMI(totalLoanForPMI, homePrice);
+  const tx = calcTxCosts(homePrice, totalLoanForPMI);
+  // Add cash-out refi closing costs (typically 2-5% of loan amount)
+  const cashOutRefiClosingCosts = isCashOutRefi ? totalRefiLoan * 0.025 : 0;
+  const amort = isCashOutRefi
+    ? genAmort(totalRefiLoan, cashOutRefiRate, loanTerm)
+    : genAmort(mortgageLoan, mortgageRate, loanTerm);
+
   // Interest calculations - annual
-  const mortgageInterestAnnual = mortgageLoan * mortgageRate;
+  // For cash-out refi: acquisition debt portion gets mortgage interest treatment
+  // Cash-out portion gets investment interest treatment (if proceeds invested)
+  const acquisitionDebtInterest = isCashOutRefi ? baseMortgageLoan * cashOutRefiRate : mortgageLoan * mortgageRate;
+  const cashOutInterestAnnual = isCashOutRefi ? actualCashOutAmount * cashOutRefiRate : 0;
+  const mortgageInterestAnnual = acquisitionDebtInterest; // For backward compatibility
   const marginInterestAnnual = marginLoan * marginRate;
   const helocInterestAnnual = actualHELOC * helocRate;
-  const totalInterestAnnual = mortgageInterestAnnual + marginInterestAnnual + helocInterestAnnual;
-  
+  const totalInterestAnnual = acquisitionDebtInterest + cashOutInterestAnnual + marginInterestAnnual + helocInterestAnnual;
+
   // Investment income from borrowed funds invested
-  // Margin loan: stocks stay invested, so full portfolio generates returns
-  // HELOC: proceeds are invested
-  const marginInvestmentIncome = marginLoan > 0 ? marginLoan * investmentReturn : 0; // Conservative: only count margin amount
+  // IMPORTANT: For investment interest deduction, only ACTUAL income counts
+  // (dividends, interest, realized gains) - NOT unrealized appreciation
+  // Total return for wealth calculation still uses full investmentReturn
+  const marginInvestmentIncome = marginLoan > 0 ? marginLoan * investmentReturn : 0;
   const helocInvestmentIncome = actualHELOC * investmentReturn;
-  const totalInvestmentIncome = marginInvestmentIncome + helocInvestmentIncome;
-  
+  const cashOutInvestmentIncome = actualCashOutAmount * investmentReturn;
+  const totalInvestmentIncome = marginInvestmentIncome + helocInvestmentIncome + cashOutInvestmentIncome;
+
+  // For deductibility limit, use only dividend/income yield (actual taxable income)
+  const marginDeductibleIncome = marginLoan > 0 ? marginLoan * dividendYield : 0;
+  const helocDeductibleIncome = actualHELOC * dividendYield;
+  const cashOutDeductibleIncome = actualCashOutAmount * dividendYield;
+  const totalDeductibleInvestmentIncome = marginDeductibleIncome + helocDeductibleIncome + cashOutDeductibleIncome;
+
   // Tax deductions - CORRECTED LOGIC
-  // 1. Mortgage interest: deductible on Schedule A (up to $750K loan limit)
-  const deductibleMortgageInterest = Math.min(mortgageLoan, 750000) * mortgageRate;
-  const nonDeductibleMortgageInterest = mortgageInterestAnnual - deductibleMortgageInterest;
-  
+  // 1. Mortgage/Acquisition debt interest: deductible on Schedule A
+  //    Federal limit: $750K for loans after Dec 2017
+  //    California limit: $1M (CA did not conform to TCJA)
+  //    For cash-out refi: only the acquisition debt portion counts as mortgage interest
+  const acquisitionDebt = isCashOutRefi ? baseMortgageLoan : mortgageLoan;
+  const acquisitionDebtRate = isCashOutRefi ? cashOutRefiRate : mortgageRate;
+  const federalDeductibleMortgageInterest = Math.min(acquisitionDebt, 750000) * acquisitionDebtRate;
+  const caDeductibleMortgageInterest = Math.min(acquisitionDebt, 1000000) * acquisitionDebtRate;
+  const deductibleMortgageInterest = federalDeductibleMortgageInterest; // For backward compatibility
+  const nonDeductibleMortgageInterest = acquisitionDebtInterest - federalDeductibleMortgageInterest;
+
   // 2. Margin interest: deductible as INVESTMENT interest (Schedule A, line 9)
-  //    Limited to net investment income
-  const deductibleMarginInterest = Math.min(marginInterestAnnual, marginInvestmentIncome);
+  //    Limited to net investment income (only actual income, not appreciation)
+  const deductibleMarginInterest = Math.min(marginInterestAnnual, marginDeductibleIncome);
   const nonDeductibleMarginInterest = marginInterestAnnual - deductibleMarginInterest;
-  
-  // 3. HELOC interest: if proceeds used for investment, it's investment interest
-  //    Deductible up to investment income (combined with margin)
-  const remainingInvestmentIncomeForHELOC = Math.max(0, totalInvestmentIncome - deductibleMarginInterest);
-  const deductibleHELOCInterest = Math.min(helocInterestAnnual, remainingInvestmentIncomeForHELOC);
+
+  // 3. Cash-out refi interest (cash-out portion): investment interest if proceeds invested
+  const remainingDeductibleIncomeForCashOut = Math.max(0, totalDeductibleInvestmentIncome - deductibleMarginInterest);
+  const deductibleCashOutInterest = Math.min(cashOutInterestAnnual, remainingDeductibleIncomeForCashOut);
+  const nonDeductibleCashOutInterest = cashOutInterestAnnual - deductibleCashOutInterest;
+
+  // 4. HELOC interest: if proceeds used for investment, it's investment interest
+  //    Deductible up to investment income (combined with margin and cash-out)
+  const remainingDeductibleIncomeForHELOC = Math.max(0, totalDeductibleInvestmentIncome - deductibleMarginInterest - deductibleCashOutInterest);
+  const deductibleHELOCInterest = Math.min(helocInterestAnnual, remainingDeductibleIncomeForHELOC);
   const nonDeductibleHELOCInterest = helocInterestAnnual - deductibleHELOCInterest;
-  
+
   // Itemized deductions for Schedule A
   const saltCapped = Math.min(stateTax + propTax, 10000);
   const saltLost = Math.max(0, stateTax + propTax - 10000);
   const itemizedTotal = deductibleMortgageInterest + saltCapped;
   const shouldItemize = itemizedTotal > stdDeduction;
-  
+
   // Tax benefits calculation
-  // Mortgage interest benefit (only if itemizing and exceeds standard)
-  const mortgageTaxBenefit = shouldItemize ? Math.max(0, itemizedTotal - stdDeduction) * fedRate : 0;
-  
+  // Federal mortgage interest benefit (only if itemizing and exceeds standard)
+  const federalMortgageTaxBenefit = shouldItemize ? Math.max(0, itemizedTotal - stdDeduction) * fedRate : 0;
+
+  // California mortgage interest benefit (CA standard deduction is much lower, ~$10k married)
+  // CA allows $1M limit vs federal $750K, and most high earners itemize for CA
+  const caStdDeduction = filingStatus === 'married' ? 10726 : 5363;
+  const caItemizedTotal = caDeductibleMortgageInterest + (stateTax + propTax); // No SALT cap for CA state taxes
+  const shouldItemizeCA = caItemizedTotal > caStdDeduction;
+  const caMortgageTaxBenefit = shouldItemizeCA ? Math.max(0, caItemizedTotal - caStdDeduction) * caRate : 0;
+
+  // Combined mortgage tax benefit
+  const mortgageTaxBenefit = federalMortgageTaxBenefit + caMortgageTaxBenefit;
+
   // Investment interest benefit (deductible against ordinary income at combined rate)
-  const investmentInterestDeduction = deductibleMarginInterest + deductibleHELOCInterest;
+  const investmentInterestDeduction = deductibleMarginInterest + deductibleCashOutInterest + deductibleHELOCInterest;
   const investInterestTaxBenefit = investmentInterestDeduction * (fedRate + caRate);
-  
+
   const totalTaxBenefit = mortgageTaxBenefit + investInterestTaxBenefit;
-  
+
   // Effective interest rates (after tax benefit)
-  const netMortgageInterest = mortgageInterestAnnual - (shouldItemize ? deductibleMortgageInterest * fedRate : 0);
+  const netMortgageInterest = acquisitionDebtInterest - (shouldItemize ? deductibleMortgageInterest * fedRate : 0);
+  const netCashOutInterest = cashOutInterestAnnual - (deductibleCashOutInterest * (fedRate + caRate));
   const netMarginInterest = marginInterestAnnual - (deductibleMarginInterest * (fedRate + caRate));
   const netHELOCInterest = helocInterestAnnual - (deductibleHELOCInterest * (fedRate + caRate));
-  
-  const mortgageEffectiveRate = mortgageLoan > 0 ? netMortgageInterest / mortgageLoan : 0;
+
+  const mortgageEffectiveRate = acquisitionDebt > 0 ? netMortgageInterest / acquisitionDebt : 0;
+  const cashOutEffectiveRate = actualCashOutAmount > 0 ? netCashOutInterest / actualCashOutAmount : 0;
   const marginEffectiveRate = marginLoan > 0 ? netMarginInterest / marginLoan : 0;
   const helocEffectiveRate = actualHELOC > 0 ? netHELOCInterest / actualHELOC : 0;
-  
-  const totalBorrowed = mortgageLoan + marginLoan + actualHELOC;
-  const totalNetInterest = netMortgageInterest + netMarginInterest + netHELOCInterest;
+
+  const totalBorrowed = (isCashOutRefi ? totalRefiLoan : mortgageLoan) + marginLoan + actualHELOC;
+  const totalNetInterest = netMortgageInterest + netCashOutInterest + netMarginInterest + netHELOCInterest;
   const blendedEffectiveRate = totalBorrowed > 0 ? totalNetInterest / totalBorrowed : 0;
-  
+
   // Non-recoverable costs breakdown
   const nonRecovBreakdown = {
-    mortgageInterest: mortgageInterestAnnual,
+    mortgageInterest: acquisitionDebtInterest,
+    cashOutInterest: cashOutInterestAnnual,
     marginInterest: marginInterestAnnual,
     helocInterest: helocInterestAnnual,
     pmi: pmi.monthly * 12,
@@ -201,7 +252,8 @@ const calcScenario = (params) => {
     const amortData = amort.schedule[y-1] || amort.schedule[amort.schedule.length - 1] || { balance: 0, yearlyInterest: 0 };
     const loanBal = amortData.balance || 0;
     
-    // Owner equity = home value - remaining mortgage - margin loan - HELOC
+    // Owner equity = home value - remaining mortgage/refi loan - margin loan - HELOC
+    // Note: for cash-out refi, loanBal already includes the cash-out portion (it's part of totalRefiLoan)
     const equity = homeVal - loanBal - marginLoan - actualHELOC;
     
     const yPropTax = propTax * Math.pow(1.02, y - 1); // Prop 13
@@ -267,25 +319,34 @@ const calcScenario = (params) => {
   const breakEvenYear = yearlyAnalysis.find(y => y.breakEven)?.year || 'Never';
   
   return {
-    homePrice, 
-    totalDown: totalEquityInput, 
-    cashDown, 
-    marginLoan, 
+    homePrice,
+    totalDown: totalEquityInput,
+    cashDown,
+    marginLoan,
     helocAmount: actualHELOC,
-    mortgageLoan,
+    mortgageLoan: isCashOutRefi ? 0 : mortgageLoan,
+    // Cash-out refinance
+    isCashOutRefi,
+    cashOutRefiAmount: actualCashOutAmount,
+    totalRefiLoan,
+    acquisitionDebt,
+    cashOutRefiClosingCosts,
     needsMortgage,
     monthlyPayment: amort.monthlyPayment + pmi.monthly,
-    pmi, 
-    txCosts: tx, 
+    pmi,
+    txCosts: { ...tx, buy: tx.buy + cashOutRefiClosingCosts },
     amort,
     // Interest details
-    mortgageInterestAnnual,
+    mortgageInterestAnnual: acquisitionDebtInterest,
+    cashOutInterestAnnual,
     marginInterestAnnual,
     helocInterestAnnual,
     totalInterestAnnual,
     // Deductibility
     deductibleMortgageInterest,
     nonDeductibleMortgageInterest,
+    deductibleCashOutInterest,
+    nonDeductibleCashOutInterest,
     deductibleMarginInterest,
     nonDeductibleMarginInterest,
     deductibleHELOCInterest,
@@ -293,17 +354,27 @@ const calcScenario = (params) => {
     investmentInterestDeduction,
     // Investment income
     totalInvestmentIncome,
+    totalDeductibleInvestmentIncome,
+    dividendYield,
     // Tax
     itemizedTotal,
     stdDeduction,
     shouldItemize,
+    caItemizedTotal,
+    caStdDeduction,
+    shouldItemizeCA,
     saltCapped,
     saltLost,
+    federalMortgageTaxBenefit,
+    caMortgageTaxBenefit,
     mortgageTaxBenefit,
     investInterestTaxBenefit,
     totalTaxBenefit,
+    federalDeductibleMortgageInterest,
+    caDeductibleMortgageInterest,
     // Effective rates
     mortgageEffectiveRate,
+    cashOutEffectiveRate,
     marginEffectiveRate,
     helocEffectiveRate,
     blendedEffectiveRate,
@@ -322,7 +393,7 @@ const calcScenario = (params) => {
 
 // Optimization engine - FIXED VERSION
 const runOptimization = (params) => {
-  const { homePrice, totalSavings, stockPortfolio, mortgageRate, loanTerm, appreciationRate, investmentReturn, monthlyRent, marginRate, helocRate, fedRate, caRate, stateTax, stdDeduction, minBuffer } = params;
+  const { homePrice, totalSavings, stockPortfolio, mortgageRate, cashOutRefiRate = 0.0675, loanTerm, appreciationRate, investmentReturn, dividendYield = 0.02, monthlyRent, marginRate, helocRate, fedRate, caRate, stateTax, stdDeduction, minBuffer, filingStatus = 'married' } = params;
   
   const results = [];
   const maxMarginPct = 0.30;
@@ -332,8 +403,8 @@ const runOptimization = (params) => {
     const cashDown = homePrice * dpPct;
     const scenario = calcScenario({
       homePrice, cashDown, marginLoan: 0, helocAmount: 0,
-      mortgageRate, loanTerm, appreciationRate, investmentReturn, monthlyRent,
-      marginRate, helocRate, fedRate, caRate, stateTax, stdDeduction
+      mortgageRate, loanTerm, appreciationRate, investmentReturn, dividendYield, monthlyRent,
+      marginRate, helocRate, fedRate, caRate, stateTax, stdDeduction, filingStatus
     });
     
     const remaining = totalSavings - cashDown - scenario.txCosts.buy;
@@ -361,8 +432,8 @@ const runOptimization = (params) => {
       
       const scenario = calcScenario({
         homePrice, cashDown, marginLoan, helocAmount: 0,
-        mortgageRate, loanTerm, appreciationRate, investmentReturn, monthlyRent,
-        marginRate, helocRate, fedRate, caRate, stateTax, stdDeduction
+        mortgageRate, loanTerm, appreciationRate, investmentReturn, dividendYield, monthlyRent,
+        marginRate, helocRate, fedRate, caRate, stateTax, stdDeduction, filingStatus
       });
       
       const remaining = totalSavings - cashDown - scenario.txCosts.buy;
@@ -397,8 +468,8 @@ const runOptimization = (params) => {
         
         const scenario = calcScenario({
           homePrice, cashDown: cashNeeded, marginLoan, helocAmount,
-          mortgageRate, loanTerm, appreciationRate, investmentReturn, monthlyRent,
-          marginRate, helocRate, fedRate, caRate, stateTax, stdDeduction
+          mortgageRate, loanTerm, appreciationRate, investmentReturn, dividendYield, monthlyRent,
+          marginRate, helocRate, fedRate, caRate, stateTax, stdDeduction, filingStatus
         });
         
         // Remaining = what you started with - cash used - closing costs + HELOC proceeds
@@ -418,7 +489,46 @@ const runOptimization = (params) => {
       }
     }
   }
-  
+
+  // Strategy 4: Traditional Mortgage + Cash-Out Refinance
+  // Buy with mortgage, then immediately do cash-out refi to extract equity for investment
+  // Pros: Fixed rate (vs HELOC variable), interest tracing for investment deduction
+  // Cons: Replaces original mortgage rate, higher closing costs than HELOC
+  for (const dpPct of [0.20, 0.25, 0.30, 0.35, 0.40]) {
+    for (const cashOutPct of [0.20, 0.30, 0.40, 0.50]) {
+      const cashDown = homePrice * dpPct;
+      if (cashDown > totalSavings - minBuffer) continue;
+
+      const baseMortgage = homePrice - cashDown;
+      const cashOutAmount = homePrice * cashOutPct;
+      const maxLTV = 0.80; // Most lenders cap at 80% LTV for cash-out refi
+
+      // Total loan after refi must be <= 80% of home value
+      if ((baseMortgage + cashOutAmount) / homePrice > maxLTV) continue;
+
+      const scenario = calcScenario({
+        homePrice, cashDown, marginLoan: 0, helocAmount: 0,
+        cashOutRefiAmount: cashOutAmount, cashOutRefiRate,
+        mortgageRate, loanTerm, appreciationRate, investmentReturn, dividendYield, monthlyRent,
+        marginRate, helocRate, fedRate, caRate, stateTax, stdDeduction, filingStatus
+      });
+
+      // Remaining = savings - down payment - closing costs + cash-out proceeds
+      const remaining = totalSavings - cashDown - scenario.txCosts.buy + cashOutAmount;
+
+      if (remaining >= minBuffer) {
+        results.push({
+          ...scenario,
+          strategy: 'Cash-Out Refi',
+          strategyDesc: `${(dpPct*100).toFixed(0)}% down + ${(cashOutPct*100).toFixed(0)}% cash-out refi`,
+          remaining,
+          riskLevel: 'Medium', // Fixed rate is less risky than HELOC variable
+          dpPct: dpPct * 100
+        });
+      }
+    }
+  }
+
   // Score and rank
   const scored = results.map(r => {
     const wealthScore = r.ownerWealth20 / 1000000;
@@ -471,7 +581,9 @@ export default function HomePurchaseOptimizer() {
   const [mortgageRate, setMortgageRate] = useState(6.5);
   const [marginRate, setMarginRate] = useState(6.5);
   const [helocRate, setHelocRate] = useState(8.5);
+  const [cashOutRefiRate, setCashOutRefiRate] = useState(6.75); // Cash-out refinance rate (typically slightly higher than purchase rate)
   const [investmentReturn, setInvestmentReturn] = useState(8);
+  const [dividendYield, setDividendYield] = useState(2); // Actual income (dividends, interest) - for investment interest deduction
   const [homeAppreciation, setHomeAppreciation] = useState(5);
   const [loanTerm, setLoanTerm] = useState(30);
   const [minBuffer, setMinBuffer] = useState(300000);
@@ -484,6 +596,12 @@ export default function HomePurchaseOptimizer() {
   const [activeTab, setActiveTab] = useState('optimize');
   const [optimizationResult, setOptimizationResult] = useState(null);
   const [openInfoBoxes, setOpenInfoBoxes] = useState({});
+
+  // Scenario comparison state
+  const [scenarios, setScenarios] = useState([
+    { id: 1, name: 'Scenario A', dpPct: 20, mortgageRate: 6.5, marginPct: 0, helocPct: 0 },
+    { id: 2, name: 'Scenario B', dpPct: 30, mortgageRate: 6.5, marginPct: 15, helocPct: 0 },
+  ]);
   
   const toggleInfo = (id) => setOpenInfoBoxes(p => ({ ...p, [id]: !p[id] }));
   
@@ -495,10 +613,10 @@ export default function HomePurchaseOptimizer() {
   
   const handleOptimize = useCallback(() => {
     const result = runOptimization({
-      homePrice, totalSavings, stockPortfolio, mortgageRate: mortgageRate/100, loanTerm,
+      homePrice, totalSavings, stockPortfolio, mortgageRate: mortgageRate/100, cashOutRefiRate: cashOutRefiRate/100, loanTerm,
       appreciationRate: homeAppreciation/100, investmentReturn: investmentReturn/100,
-      monthlyRent, marginRate: marginRate/100, helocRate: helocRate/100,
-      fedRate, caRate, stateTax, stdDeduction, minBuffer
+      dividendYield: dividendYield/100, monthlyRent, marginRate: marginRate/100, helocRate: helocRate/100,
+      fedRate, caRate, stateTax, stdDeduction, minBuffer, filingStatus
     });
     setOptimizationResult(result);
     setActiveTab('optimize');
@@ -523,15 +641,17 @@ export default function HomePurchaseOptimizer() {
       loanTerm,
       appreciationRate: homeAppreciation / 100,
       investmentReturn: investmentReturn / 100,
+      dividendYield: dividendYield / 100,
       monthlyRent,
       marginRate: marginRate / 100,
       helocRate: helocRate / 100,
       fedRate,
       caRate,
       stateTax,
-      stdDeduction
+      stdDeduction,
+      filingStatus
     });
-  }, [homePrice, manualDpPct, manualMarginPct, manualHelocPct, stockPortfolio, mortgageRate, loanTerm, homeAppreciation, investmentReturn, monthlyRent, marginRate, helocRate, fedRate, caRate, stateTax, stdDeduction]);
+  }, [homePrice, manualDpPct, manualMarginPct, manualHelocPct, stockPortfolio, mortgageRate, loanTerm, homeAppreciation, investmentReturn, dividendYield, monthlyRent, marginRate, helocRate, fedRate, caRate, stateTax, stdDeduction, filingStatus]);
   
   const manualRemaining = totalSavings - manualScenario.cashDown - manualScenario.txCosts.buy + manualScenario.helocAmount;
   const canManualHELOC = manualScenario.cashDown + (stockPortfolio * manualMarginPct / 100) >= homePrice;
@@ -604,6 +724,12 @@ export default function HomePurchaseOptimizer() {
           <div style={{ color: '#60a5fa', padding: '6px 0' }}>🏠 HELOC Interest</div>
           <div style={{ textAlign: 'right', padding: '6px 0' }}>{fmt$(nr.helocInterest)}</div>
           <div style={{ textAlign: 'right', padding: '6px 0' }}>{fmt$(nr.helocInterest/12)}</div>
+        </>}
+
+        {nr.cashOutInterest > 0 && <>
+          <div style={{ color: '#22d3ee', padding: '6px 0' }}>💵 Cash-Out Refi Interest</div>
+          <div style={{ textAlign: 'right', padding: '6px 0' }}>{fmt$(nr.cashOutInterest)}</div>
+          <div style={{ textAlign: 'right', padding: '6px 0' }}>{fmt$(nr.cashOutInterest/12)}</div>
         </>}
         
         {nr.pmi > 0 && <>
@@ -689,6 +815,49 @@ export default function HomePurchaseOptimizer() {
       );
     }
     
+    // Generate recommendation explanation
+    const getRecommendationExplanation = () => {
+      const reasons = [];
+      const risks = [];
+
+      if (opt.strategy === 'Traditional') {
+        reasons.push('Simple, low-risk approach with predictable payments');
+        reasons.push(`Your ${fmtPctWhole(opt.dpPct)} down payment avoids PMI concerns`);
+        if (opt.shouldItemize) reasons.push('Mortgage interest provides tax deduction');
+        risks.push('Opportunity cost: cash tied up in home equity could earn returns elsewhere');
+      } else if (opt.strategy.includes('Margin')) {
+        reasons.push('Preserves cash liquidity while achieving desired down payment');
+        reasons.push(`Margin interest (${fmtPct(marginRate/100)}) is deductible against investment income`);
+        reasons.push(`Effective margin rate after tax: ${fmtPct(opt.marginEffectiveRate)}`);
+        risks.push(`Margin call risk if portfolio drops significantly (keep utilization under 25%)`);
+        risks.push('Variable margin rates could increase');
+      } else if (opt.strategy.includes('HELOC')) {
+        reasons.push('Interest tracing: ALL borrowing costs become investment interest (deductible)');
+        reasons.push(`Blended effective rate ${fmtPct(opt.blendedEffectiveRate)} is lower than mortgage rate`);
+        reasons.push('Extracted equity can compound in investments');
+        risks.push('HELOC has variable rate - could increase over time');
+        risks.push('Requires disciplined investing of HELOC proceeds');
+      } else if (opt.strategy.includes('Cash-Out Refi')) {
+        reasons.push('Fixed rate cash-out refi is more stable than variable HELOC');
+        reasons.push('Extracted equity portion qualifies for investment interest deduction');
+        reasons.push(`Cash-out proceeds can be invested to potentially outpace the ${fmtPct(cashOutRefiRate/100)} rate`);
+        risks.push('Higher closing costs than HELOC');
+        risks.push('Entire loan is at refi rate (no benefit from lower original mortgage)');
+      }
+
+      // Common reasons based on metrics
+      if (opt.breakEvenYear !== 'Never' && opt.breakEvenYear <= 5) {
+        reasons.push(`Quick break-even in year ${opt.breakEvenYear} vs renting`);
+      }
+      if (opt.nonRecovBreakdown.netTotal/12 < monthlyRent) {
+        reasons.push(`Monthly cost (${fmt$(opt.nonRecovBreakdown.netTotal/12)}) is LESS than rent (${fmt$(monthlyRent)})`);
+      }
+
+      return { reasons, risks };
+    };
+
+    const { reasons, risks } = getRecommendationExplanation();
+
     return (
       <>
         {/* Diagnostics - why certain strategies may not appear */}
@@ -697,7 +866,34 @@ export default function HomePurchaseOptimizer() {
             <strong>⚠️ HELOC strategies not viable:</strong> You need {fmt$(homePrice)} to buy cash, but only have {fmt$(diag.totalAvailable)} (savings + max margin). Gap: {fmt$(diag.gap)}
           </div>
         )}
-        
+
+        {/* Recommendation Summary Box */}
+        <div style={{ background: 'linear-gradient(135deg, rgba(34,197,94,0.15), rgba(16,185,129,0.1))', borderRadius: '20px', padding: '28px', border: '2px solid rgba(34,197,94,0.4)', marginBottom: '24px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px' }}>
+            <div style={{ fontSize: '2rem' }}>✨</div>
+            <div>
+              <div style={{ fontSize: '0.75rem', color: '#4ade80', textTransform: 'uppercase', letterSpacing: '1.5px', fontWeight: '600' }}>Recommended Strategy</div>
+              <h2 style={{ fontSize: '1.6rem', fontWeight: '700', color: '#fff', margin: '4px 0 0 0' }}>{opt.strategy}</h2>
+            </div>
+          </div>
+
+          <div style={{ marginBottom: '20px' }}>
+            <div style={{ fontSize: '0.85rem', color: '#4ade80', fontWeight: '600', marginBottom: '10px' }}>Why This Strategy?</div>
+            <ul style={{ margin: 0, paddingLeft: '20px', color: '#d0d0e0', fontSize: '0.9rem', lineHeight: '1.8' }}>
+              {reasons.map((r, i) => <li key={i}>{r}</li>)}
+            </ul>
+          </div>
+
+          {risks.length > 0 && (
+            <div style={{ background: 'rgba(251,191,36,0.1)', border: '1px solid rgba(251,191,36,0.3)', borderRadius: '12px', padding: '16px' }}>
+              <div style={{ fontSize: '0.85rem', color: '#fbbf24', fontWeight: '600', marginBottom: '8px' }}>⚠️ Risk Factors to Consider</div>
+              <ul style={{ margin: 0, paddingLeft: '20px', color: '#d0d0e0', fontSize: '0.85rem', lineHeight: '1.7' }}>
+                {risks.map((r, i) => <li key={i}>{r}</li>)}
+              </ul>
+            </div>
+          )}
+        </div>
+
         <div style={s.planCard}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px' }}>
             <div>
@@ -822,7 +1018,7 @@ export default function HomePurchaseOptimizer() {
             </tbody>
           </table>
           <div style={{ marginTop: '12px', fontSize: '0.85rem', color: '#8b8ba7' }}>
-            Investment income for deduction limit: {fmt$(opt.totalInvestmentIncome)}/yr (from invested margin/HELOC proceeds)
+            Total investment return: {fmt$(opt.totalInvestmentIncome)}/yr | Deductible income (dividends/interest): {fmt$(opt.totalDeductibleInvestmentIncome)}/yr
           </div>
         </div>
         
@@ -886,7 +1082,48 @@ export default function HomePurchaseOptimizer() {
         <InfoBox title="Manual Mode" isOpen={openInfoBoxes['manual']} onToggle={() => toggleInfo('manual')}>
           <p>Use sliders to test any combination. HELOC requires buying outright (set down payment to 100% or ensure cash + margin ≥ home price).</p>
         </InfoBox>
-        
+
+        {/* Educational Info Boxes */}
+        <InfoBox title="What is a Margin Loan?" isOpen={openInfoBoxes['marginInfo']} onToggle={() => toggleInfo('marginInfo')}
+          recommendation={{ type: 'maybe', text: 'Good for high-income investors with diversified portfolios who want to preserve cash flow.' }}>
+          <p><strong>How it works:</strong> Borrow against your stock portfolio without selling. Your broker lends you cash using your securities as collateral.</p>
+          <p style={{marginTop: '10px'}}><strong>Interest tracing:</strong> If you use margin proceeds for home purchase, the interest is generally NOT deductible. However, if you use margin to stay invested while using cash for the home, the interest on your existing margin (for investment purposes) remains deductible against investment income.</p>
+          <p style={{marginTop: '10px'}}><strong>Margin call risk:</strong> If your portfolio drops significantly (typically 25-30%), you may need to deposit more cash or sell securities. Keep utilization under 25% for safety.</p>
+          <p style={{marginTop: '10px'}}><strong>Rates:</strong> Usually variable, tied to broker call rate or SOFR. Currently around {marginRate}%.</p>
+        </InfoBox>
+
+        <InfoBox title="What is a HELOC?" isOpen={openInfoBoxes['helocInfo']} onToggle={() => toggleInfo('helocInfo')}
+          recommendation={{ type: 'yes', text: 'Best strategy for high earners who can buy outright and want maximum tax efficiency.' }}>
+          <p><strong>How it works:</strong> Home Equity Line of Credit - borrow against your home equity after purchase. Like a credit card secured by your home.</p>
+          <p style={{marginTop: '10px'}}><strong>Interest tracing for investment:</strong> If you buy the home with cash, then take a HELOC and invest the proceeds, the interest is classified as INVESTMENT interest (not mortgage interest). This is deductible against your investment income at your full marginal rate ({fmtPct(combRate)}).</p>
+          <p style={{marginTop: '10px'}}><strong>Variable rate risk:</strong> HELOC rates are typically variable (currently ~{helocRate}%). They can increase over time, unlike fixed mortgage rates.</p>
+          <p style={{marginTop: '10px'}}><strong>Requires equity:</strong> You must own the home outright (or have significant equity) to get a HELOC. Most lenders allow up to 80% LTV.</p>
+        </InfoBox>
+
+        <InfoBox title="What is Cash-Out Refinance?" isOpen={openInfoBoxes['cashOutInfo']} onToggle={() => toggleInfo('cashOutInfo')}
+          recommendation={{ type: 'maybe', text: 'Consider if you want fixed-rate borrowing and HELOC rates are high or rising.' }}>
+          <p><strong>How it works:</strong> Replace your existing mortgage with a new, larger mortgage and pocket the difference as cash.</p>
+          <p style={{marginTop: '10px'}}><strong>Pros vs HELOC:</strong> Fixed rate (predictable payments), potentially lower rate than HELOC, single payment instead of two loans.</p>
+          <p style={{marginTop: '10px'}}><strong>Cons vs HELOC:</strong> Higher closing costs (2-5% of loan), replaces your entire mortgage (bad if you had a low rate), less flexible than a line of credit.</p>
+          <p style={{marginTop: '10px'}}><strong>Interest tracing:</strong> The cash-out portion can qualify as investment interest if proceeds are invested. The original loan portion remains mortgage interest.</p>
+        </InfoBox>
+
+        <InfoBox title="Investment Interest Deduction Rules" isOpen={openInfoBoxes['investIntInfo']} onToggle={() => toggleInfo('investIntInfo')}
+          recommendation={{ type: 'no', text: 'Only actual income counts - appreciation does not. Plan your dividend yield carefully.' }}>
+          <p><strong>The limit:</strong> Investment interest expense is deductible only up to your net investment income for the year.</p>
+          <p style={{marginTop: '10px'}}><strong>What counts as investment income:</strong> Dividends, interest, short-term capital gains, and other realized investment income. Long-term capital gains only count if you elect to treat them as ordinary income (losing the lower LTCG rate).</p>
+          <p style={{marginTop: '10px'}}><strong>What does NOT count:</strong> Unrealized appreciation (paper gains). If your portfolio is mostly growth stocks with low dividends, you may have limited deduction capacity.</p>
+          <p style={{marginTop: '10px'}}><strong>Carryforward:</strong> Excess investment interest expense can be carried forward to future years indefinitely.</p>
+        </InfoBox>
+
+        <InfoBox title="$750K Federal vs $1M California Limit" isOpen={openInfoBoxes['mortgageLimitInfo']} onToggle={() => toggleInfo('mortgageLimitInfo')}
+          recommendation={{ type: 'yes', text: 'California provides extra deduction benefit on mortgages between $750K-$1M.' }}>
+          <p><strong>Federal ($750K limit):</strong> Under TCJA (2017), mortgage interest is only deductible on the first $750,000 of acquisition debt for federal taxes. Interest on debt above this is NOT federally deductible.</p>
+          <p style={{marginTop: '10px'}}><strong>California ($1M limit):</strong> California did NOT conform to TCJA. The state still allows mortgage interest deduction on up to $1,000,000 of acquisition debt.</p>
+          <p style={{marginTop: '10px'}}><strong>What this means:</strong> For a $1M+ mortgage, you get federal deduction on the first $750K and CA deduction on the first $1M. The $750K-$1M portion is only deductible for state taxes.</p>
+          <p style={{marginTop: '10px'}}><strong>Example:</strong> $900K mortgage at 6.5% = $58,500/yr interest. Federal deduction: $48,750 (on $750K). CA deduction: $58,500 (full amount). You save an extra {fmtPct(caRate)} on the $9,750 difference = {fmt$(9750 * caRate)}/yr.</p>
+        </InfoBox>
+
         <div style={s.card}>
           <h3 style={{ ...s.section, marginTop: 0 }}>Configure Your Scenario</h3>
           
@@ -1056,6 +1293,237 @@ export default function HomePurchaseOptimizer() {
     );
   };
 
+  // Scenario comparison calculations
+  const scenarioResults = useMemo(() => {
+    return scenarios.map(sc => {
+      const marginLoan = stockPortfolio * (sc.marginPct / 100);
+      const totalDown = homePrice * (sc.dpPct / 100);
+      const cashDown = Math.max(0, totalDown - marginLoan);
+      const canHELOC = sc.dpPct >= 100 || (cashDown + marginLoan >= homePrice);
+      const helocAmount = canHELOC && sc.helocPct > 0 ? homePrice * (sc.helocPct / 100) : 0;
+
+      const result = calcScenario({
+        homePrice,
+        cashDown: sc.dpPct >= 100 ? homePrice - marginLoan : cashDown,
+        marginLoan,
+        helocAmount,
+        mortgageRate: sc.mortgageRate / 100,
+        loanTerm,
+        appreciationRate: homeAppreciation / 100,
+        investmentReturn: investmentReturn / 100,
+        dividendYield: dividendYield / 100,
+        monthlyRent,
+        marginRate: marginRate / 100,
+        helocRate: helocRate / 100,
+        fedRate,
+        caRate,
+        stateTax,
+        stdDeduction,
+        filingStatus
+      });
+
+      const remaining = totalSavings - result.cashDown - result.txCosts.buy + result.helocAmount;
+      return { ...sc, ...result, remaining };
+    });
+  }, [scenarios, homePrice, stockPortfolio, loanTerm, homeAppreciation, investmentReturn, dividendYield, monthlyRent, marginRate, helocRate, fedRate, caRate, stateTax, stdDeduction, filingStatus, totalSavings]);
+
+  const updateScenario = (id, field, value) => {
+    setScenarios(prev => prev.map(s => s.id === id ? { ...s, [field]: value } : s));
+  };
+
+  const addScenario = () => {
+    const newId = Math.max(...scenarios.map(s => s.id)) + 1;
+    setScenarios(prev => [...prev, {
+      id: newId,
+      name: `Scenario ${String.fromCharCode(64 + newId)}`,
+      dpPct: 20,
+      mortgageRate: 6.5,
+      marginPct: 0,
+      helocPct: 0
+    }]);
+  };
+
+  const removeScenario = (id) => {
+    if (scenarios.length > 1) {
+      setScenarios(prev => prev.filter(s => s.id !== id));
+    }
+  };
+
+  const renderScenarios = () => {
+    const colors = ['#f97316', '#3b82f6', '#22c55e', '#a855f7', '#ec4899'];
+
+    return (
+      <>
+        <InfoBox title="Scenario Comparison" isOpen={openInfoBoxes['scenarioInfo']} onToggle={() => toggleInfo('scenarioInfo')}>
+          <p>Create and compare different financing scenarios side-by-side. Adjust rates, down payment, and leverage to see how they affect your costs and long-term wealth.</p>
+        </InfoBox>
+
+        {/* Scenario Cards */}
+        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(scenarios.length, 3)}, 1fr)`, gap: '16px', marginBottom: '24px' }}>
+          {scenarioResults.map((sc, idx) => (
+            <div key={sc.id} style={{ background: 'rgba(255,255,255,0.03)', borderRadius: '16px', padding: '20px', border: `2px solid ${colors[idx % colors.length]}40` }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                <input
+                  type="text"
+                  value={sc.name}
+                  onChange={e => updateScenario(sc.id, 'name', e.target.value)}
+                  style={{ background: 'transparent', border: 'none', color: colors[idx % colors.length], fontSize: '1.1rem', fontWeight: '600', width: '120px' }}
+                />
+                {scenarios.length > 1 && (
+                  <button onClick={() => removeScenario(sc.id)} style={{ background: 'rgba(248,113,113,0.2)', border: 'none', color: '#f87171', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem' }}>✕</button>
+                )}
+              </div>
+
+              <div style={{ marginBottom: '12px' }}>
+                <label style={{ fontSize: '0.75rem', color: '#8b8ba7', display: 'block', marginBottom: '4px' }}>Down Payment: {sc.dpPct}%</label>
+                <input type="range" min="10" max="100" value={sc.dpPct} onChange={e => updateScenario(sc.id, 'dpPct', Number(e.target.value))} style={{ ...s.slider, accentColor: colors[idx % colors.length] }} />
+              </div>
+
+              <div style={{ marginBottom: '12px' }}>
+                <label style={{ fontSize: '0.75rem', color: '#8b8ba7', display: 'block', marginBottom: '4px' }}>Mortgage Rate: {sc.mortgageRate}%</label>
+                <input type="range" min="4" max="9" step="0.125" value={sc.mortgageRate} onChange={e => updateScenario(sc.id, 'mortgageRate', Number(e.target.value))} style={{ ...s.slider, accentColor: colors[idx % colors.length] }} />
+              </div>
+
+              <div style={{ marginBottom: '12px' }}>
+                <label style={{ fontSize: '0.75rem', color: '#8b8ba7', display: 'block', marginBottom: '4px' }}>Margin Loan: {sc.marginPct}% of portfolio</label>
+                <input type="range" min="0" max="30" value={sc.marginPct} onChange={e => updateScenario(sc.id, 'marginPct', Number(e.target.value))} style={{ ...s.slider, accentColor: colors[idx % colors.length] }} />
+              </div>
+
+              <div style={{ marginBottom: '16px' }}>
+                <label style={{ fontSize: '0.75rem', color: '#8b8ba7', display: 'block', marginBottom: '4px' }}>HELOC: {sc.helocPct}% of home</label>
+                <input type="range" min="0" max="80" value={sc.helocPct} onChange={e => updateScenario(sc.id, 'helocPct', Number(e.target.value))} style={{ ...s.slider, accentColor: colors[idx % colors.length] }} disabled={sc.dpPct < 100 && (sc.cashDown + stockPortfolio * sc.marginPct / 100) < homePrice} />
+              </div>
+
+              <div style={{ borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '12px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', marginBottom: '6px' }}>
+                  <span style={{ color: '#8b8ba7' }}>Monthly P&I</span>
+                  <span style={{ color: '#fff', fontWeight: '600' }}>{fmt$(sc.monthlyPayment)}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', marginBottom: '6px' }}>
+                  <span style={{ color: '#8b8ba7' }}>Effective Rate</span>
+                  <span style={{ color: '#4ade80', fontWeight: '600' }}>{fmtPct(sc.blendedEffectiveRate)}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', marginBottom: '6px' }}>
+                  <span style={{ color: '#8b8ba7' }}>Break-even</span>
+                  <span style={{ color: '#fff', fontWeight: '600' }}>Year {sc.breakEvenYear}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                  <span style={{ color: '#8b8ba7' }}>20-Yr Wealth</span>
+                  <span style={{ color: colors[idx % colors.length], fontWeight: '600' }}>{fmt$(sc.ownerWealth20)}</span>
+                </div>
+              </div>
+            </div>
+          ))}
+
+          {scenarios.length < 4 && (
+            <div
+              onClick={addScenario}
+              style={{ background: 'rgba(255,255,255,0.02)', borderRadius: '16px', padding: '20px', border: '2px dashed rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', minHeight: '300px' }}
+            >
+              <div style={{ textAlign: 'center', color: '#8b8ba7' }}>
+                <div style={{ fontSize: '2rem', marginBottom: '8px' }}>+</div>
+                <div>Add Scenario</div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Comparison Table */}
+        <div style={s.card}>
+          <h3 style={{ ...s.section, marginTop: 0 }}>Side-by-Side Comparison</h3>
+          <table style={s.table}>
+            <thead>
+              <tr>
+                <th style={s.th}>Metric</th>
+                {scenarioResults.map((sc, idx) => (
+                  <th key={sc.id} style={{ ...s.th, color: colors[idx % colors.length] }}>{sc.name}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td style={s.td}>Total Down Payment</td>
+                {scenarioResults.map(sc => <td key={sc.id} style={s.td}>{fmt$(sc.totalDown)}</td>)}
+              </tr>
+              <tr>
+                <td style={s.td}>Mortgage Amount</td>
+                {scenarioResults.map(sc => <td key={sc.id} style={s.td}>{fmt$(sc.mortgageLoan || sc.acquisitionDebt || 0)}</td>)}
+              </tr>
+              <tr>
+                <td style={s.td}>Margin Loan</td>
+                {scenarioResults.map(sc => <td key={sc.id} style={s.td}>{fmt$(sc.marginLoan)}</td>)}
+              </tr>
+              <tr>
+                <td style={s.td}>HELOC Amount</td>
+                {scenarioResults.map(sc => <td key={sc.id} style={s.td}>{fmt$(sc.helocAmount)}</td>)}
+              </tr>
+              <tr style={{ background: 'rgba(255,255,255,0.03)' }}>
+                <td style={{ ...s.td, fontWeight: '600' }}>Monthly Payment</td>
+                {scenarioResults.map(sc => <td key={sc.id} style={{ ...s.td, fontWeight: '600' }}>{fmt$(sc.monthlyPayment)}</td>)}
+              </tr>
+              <tr>
+                <td style={s.td}>Annual Interest (Total)</td>
+                {scenarioResults.map(sc => <td key={sc.id} style={s.td}>{fmt$(sc.totalInterestAnnual)}</td>)}
+              </tr>
+              <tr>
+                <td style={s.td}>Tax Benefit (Annual)</td>
+                {scenarioResults.map(sc => <td key={sc.id} style={{ ...s.td, color: '#4ade80' }}>{fmt$(sc.totalTaxBenefit)}</td>)}
+              </tr>
+              <tr style={{ background: 'rgba(74,222,128,0.1)' }}>
+                <td style={{ ...s.td, fontWeight: '600', color: '#4ade80' }}>Blended Effective Rate</td>
+                {scenarioResults.map(sc => <td key={sc.id} style={{ ...s.td, fontWeight: '600', color: '#4ade80' }}>{fmtPct(sc.blendedEffectiveRate)}</td>)}
+              </tr>
+              <tr>
+                <td style={s.td}>Net Non-Recoverable (Monthly)</td>
+                {scenarioResults.map(sc => <td key={sc.id} style={s.td}>{fmt$(sc.nonRecovBreakdown.netTotal / 12)}</td>)}
+              </tr>
+              <tr>
+                <td style={s.td}>Cash Remaining</td>
+                {scenarioResults.map(sc => <td key={sc.id} style={{ ...s.td, color: sc.remaining < minBuffer ? '#f87171' : '#4ade80' }}>{fmt$(sc.remaining)}</td>)}
+              </tr>
+              <tr style={{ background: 'rgba(249,115,22,0.1)' }}>
+                <td style={{ ...s.td, fontWeight: '600' }}>Break-Even Year</td>
+                {scenarioResults.map(sc => <td key={sc.id} style={{ ...s.td, fontWeight: '600' }}>{sc.breakEvenYear}</td>)}
+              </tr>
+              <tr style={{ background: 'rgba(255,255,255,0.05)' }}>
+                <td style={{ ...s.td, fontWeight: '700', fontSize: '0.95rem' }}>20-Year Wealth</td>
+                {scenarioResults.map((sc, idx) => <td key={sc.id} style={{ ...s.td, fontWeight: '700', fontSize: '0.95rem', color: colors[idx % colors.length] }}>{fmt$(sc.ownerWealth20)}</td>)}
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        {/* Wealth Comparison Chart */}
+        <div style={s.card}>
+          <h3 style={{ ...s.section, marginTop: 0 }}>Wealth Over Time</h3>
+          <div style={s.chart}>
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
+                <XAxis dataKey="year" type="number" domain={[1, 30]} stroke="#8b8ba7" tick={{fill:'#8b8ba7'}} />
+                <YAxis stroke="#8b8ba7" tick={{fill:'#8b8ba7'}} tickFormatter={v=>`$${(v/1000000).toFixed(1)}M`} />
+                <Tooltip contentStyle={{background:'#1a1a2e',border:'1px solid rgba(255,255,255,0.1)',borderRadius:'8px'}} formatter={v=>fmt$(v)} labelFormatter={l=>`Year ${l}`} />
+                <Legend />
+                {scenarioResults.map((sc, idx) => (
+                  <Line
+                    key={sc.id}
+                    data={sc.yearlyAnalysis}
+                    type="monotone"
+                    dataKey="ownerWealth"
+                    name={sc.name}
+                    stroke={colors[idx % colors.length]}
+                    strokeWidth={2}
+                    dot={false}
+                  />
+                ))}
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </>
+    );
+  };
+
   return (
     <div style={s.container}>
       <header style={s.header}>
@@ -1083,8 +1551,14 @@ export default function HomePurchaseOptimizer() {
           <div style={s.inputGroup}><label style={s.label}>Mortgage (%)</label><input type="number" step="0.125" style={s.input} value={mortgageRate} onChange={e => setMortgageRate(Number(e.target.value))} /></div>
           <div style={s.inputGroup}><label style={s.label}>Margin (%)</label><input type="number" step="0.25" style={s.input} value={marginRate} onChange={e => setMarginRate(Number(e.target.value))} /></div>
           <div style={s.inputGroup}><label style={s.label}>HELOC (%)</label><input type="number" step="0.25" style={s.input} value={helocRate} onChange={e => setHelocRate(Number(e.target.value))} /></div>
-          <div style={s.inputGroup}><label style={s.label}>Investment Return (%)</label><input type="number" step="0.5" style={s.input} value={investmentReturn} onChange={e => setInvestmentReturn(Number(e.target.value))} /></div>
-          <div style={s.inputGroup}><label style={s.label}>Appreciation (%)</label><input type="number" step="0.5" style={s.input} value={homeAppreciation} onChange={e => setHomeAppreciation(Number(e.target.value))} /></div>
+          <div style={s.inputGroup}><label style={s.label}>Cash-Out Refi (%)</label><input type="number" step="0.125" style={s.input} value={cashOutRefiRate} onChange={e => setCashOutRefiRate(Number(e.target.value))} /></div>
+          <div style={s.inputGroup}><label style={s.label}>Total Investment Return (%)</label><input type="number" step="0.5" style={s.input} value={investmentReturn} onChange={e => setInvestmentReturn(Number(e.target.value))} /></div>
+          <div style={s.inputGroup}>
+            <label style={s.label}>Dividend/Income Yield (%)</label>
+            <input type="number" step="0.25" style={s.input} value={dividendYield} onChange={e => setDividendYield(Number(e.target.value))} />
+            <div style={{ fontSize: '0.7rem', color: '#8b8ba7', marginTop: '4px' }}>For investment interest deduction limit (actual income only)</div>
+          </div>
+          <div style={s.inputGroup}><label style={s.label}>Home Appreciation (%)</label><input type="number" step="0.5" style={s.input} value={homeAppreciation} onChange={e => setHomeAppreciation(Number(e.target.value))} /></div>
           
           <button style={s.btn} onClick={handleOptimize}>🚀 Run Optimization</button>
         </aside>
@@ -1092,11 +1566,13 @@ export default function HomePurchaseOptimizer() {
         <main>
           <div style={s.tabs}>
             <button style={{ ...s.tab, ...(activeTab === 'optimize' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('optimize')}>Optimized Plan</button>
+            <button style={{ ...s.tab, ...(activeTab === 'scenarios' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('scenarios')}>Compare Scenarios</button>
             <button style={{ ...s.tab, ...(activeTab === 'manual' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('manual')}>Manual Mode</button>
             <button style={{ ...s.tab, ...(activeTab === 'holding' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('holding')}>Holding Period</button>
           </div>
-          
+
           {activeTab === 'optimize' && renderOptimize()}
+          {activeTab === 'scenarios' && renderScenarios()}
           {activeTab === 'manual' && renderManual()}
           {activeTab === 'holding' && renderHolding()}
         </main>
