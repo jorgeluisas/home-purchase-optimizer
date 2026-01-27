@@ -94,7 +94,7 @@ const calcTxCosts = (price, loan) => {
 
 // Core scenario calculation - FIXED VERSION
 const calcScenario = (params) => {
-  const { homePrice, cashDown, marginLoan, helocAmount, cashOutRefiAmount = 0, mortgageRate, cashOutRefiRate = 0.0675, loanTerm, appreciationRate, investmentReturn, dividendYield = 0.02, monthlyRent, marginRate, helocRate, fedRate, caRate, stateTax, stdDeduction, filingStatus = 'married', grossIncome = 0 } = params;
+  const { homePrice, cashDown, marginLoan, helocAmount, cashOutRefiAmount = 0, mortgageRate, cashOutRefiRate = 0.0675, loanTerm, appreciationRate, investmentReturn, dividendYield = 0.02, monthlyRent, rentGrowthRate = 0.03, marginRate, helocRate, fedRate, caRate, stateTax, stdDeduction, filingStatus = 'married', grossIncome = 0 } = params;
   
   // Determine if this is a cash purchase (no mortgage)
   const totalEquityInput = cashDown + marginLoan;
@@ -191,8 +191,9 @@ const calcScenario = (params) => {
 
   // California mortgage interest benefit (CA standard deduction is much lower, ~$10k married)
   // CA allows $1M limit vs federal $750K, and most high earners itemize for CA
+  // NOTE: You CANNOT deduct CA state income tax from CA state taxes (circular) - only property tax + mortgage interest
   const caStdDeduction = filingStatus === 'married' ? 10726 : 5363;
-  const caItemizedTotal = caDeductibleMortgageInterest + (stateTax + propTax); // No SALT cap for CA state taxes
+  const caItemizedTotal = caDeductibleMortgageInterest + propTax; // Only mortgage interest + property tax for CA (no state tax)
   const shouldItemizeCA = caItemizedTotal > caStdDeduction;
   const caMortgageTaxBenefit = shouldItemizeCA ? Math.max(0, caItemizedTotal - caStdDeduction) * caRate : 0;
 
@@ -288,9 +289,9 @@ const calcScenario = (params) => {
     const yFedItemized = yFedDeductibleInt + ySaltCapped;
     const yFedMortgageBenefit = yFedItemized > stdDeduction ? (yFedItemized - stdDeduction) * fedRate : 0;
 
-    // CA benefit: $1M mortgage limit + NO SALT cap
+    // CA benefit: $1M mortgage limit + only property tax (can't deduct CA tax from CA tax)
     const yCADeductibleInt = yMortgageInt * (acquisitionDebt <= 1000000 ? 1 : 1000000/acquisitionDebt);
-    const yCAItemized = yCADeductibleInt + ySaltFull;
+    const yCAItemized = yCADeductibleInt + yPropTax; // Only property tax, not state income tax
     const yCAMortgageBenefit = yCAItemized > caStdDeduction ? (yCAItemized - caStdDeduction) * caRate : 0;
 
     const yMortgageBenefit = yFedMortgageBenefit + yCAMortgageBenefit;
@@ -303,7 +304,7 @@ const calcScenario = (params) => {
                           yPropTax + insurance + maintenance - yTotalBenefit;
     
     // Renter's yearly cost (from income)
-    const yRent = monthlyRent * 12 * Math.pow(1.03, y - 1); // 3% annual rent increase
+    const yRent = monthlyRent * 12 * Math.pow(1 + rentGrowthRate, y - 1); // Configurable annual rent increase
     
     // CORRECTED: Renter's portfolio compounds (with NIIT impact), then they invest/withdraw the cost difference
     // If renting is cheaper, renter invests the difference
@@ -441,7 +442,7 @@ const calcScenario = (params) => {
 
 // Optimization engine - FIXED VERSION
 const runOptimization = (params) => {
-  const { homePrice, totalSavings, stockPortfolio, mortgageRate, cashOutRefiRate = 0.0675, loanTerm, appreciationRate, investmentReturn, dividendYield = 0.02, monthlyRent, marginRate, helocRate, fedRate, caRate, stateTax, stdDeduction, minBuffer, filingStatus = 'married', grossIncome = 0 } = params;
+  const { homePrice, totalSavings, stockPortfolio, mortgageRate, cashOutRefiRate = 0.0675, loanTerm, appreciationRate, investmentReturn, dividendYield = 0.02, monthlyRent, rentGrowthRate = 0.03, marginRate, helocRate, fedRate, caRate, stateTax, stdDeduction, minBuffer, filingStatus = 'married', grossIncome = 0 } = params;
   
   const results = [];
   const maxMarginPct = 0.30;
@@ -451,7 +452,7 @@ const runOptimization = (params) => {
     const cashDown = homePrice * dpPct;
     const scenario = calcScenario({
       homePrice, cashDown, marginLoan: 0, helocAmount: 0,
-      mortgageRate, loanTerm, appreciationRate, investmentReturn, dividendYield, monthlyRent,
+      mortgageRate, loanTerm, appreciationRate, investmentReturn, dividendYield, monthlyRent, rentGrowthRate,
       marginRate, helocRate, fedRate, caRate, stateTax, stdDeduction, filingStatus, grossIncome
     });
     
@@ -577,17 +578,19 @@ const runOptimization = (params) => {
     }
   }
 
-  // Score and rank
+  // Score and rank - FIXED to use advantage (owner - renter) not just owner wealth
   const scored = results.map(r => {
-    const wealthScore = r.ownerWealth20 / 1000000;
-    const breakEvenScore = r.breakEvenYear === 'Never' ? -5 : (30 - r.breakEvenYear) / 30 * 3;
+    const advantage20 = r.ownerWealth20 - r.renterWealth20;
+    const advantageScore = advantage20 / 500000; // Positive = buying better, scaled
+    const breakEvenScore = r.breakEvenYear === 'Never' ? -3 : (30 - r.breakEvenYear) / 30 * 3;
     const riskScore = r.riskLevel === 'Low' ? 1.5 : r.riskLevel === 'Medium' ? 1 : r.riskLevel === 'Medium-High' ? 0.5 : 0;
     const effectiveRateScore = (0.08 - r.blendedEffectiveRate) * 20; // Lower rate = better
     const bufferScore = Math.min(r.remaining / minBuffer, 2) * 0.5; // More buffer = slightly better
-    
-    return { 
-      ...r, 
-      score: wealthScore * 0.4 + breakEvenScore * 0.25 + riskScore * 0.1 + effectiveRateScore * 0.15 + bufferScore * 0.1
+
+    return {
+      ...r,
+      advantage20,
+      score: advantageScore * 0.4 + breakEvenScore * 0.25 + riskScore * 0.1 + effectiveRateScore * 0.15 + bufferScore * 0.1
     };
   });
   
@@ -661,6 +664,7 @@ export default function HomePurchaseOptimizer() {
   const [stockPortfolio, setStockPortfolio] = useState(1500000);
   const [grossIncome, setGrossIncome] = useState(1500000);
   const [monthlyRent, setMonthlyRent] = useState(8000);
+  const [rentGrowth, setRentGrowth] = useState(3); // Annual rent increase %
   const [filingStatus, setFilingStatus] = useState('married');
   const [mortgageRate, setMortgageRate] = useState(6.5);
   const [marginRate, setMarginRate] = useState(6.5);
@@ -703,12 +707,12 @@ export default function HomePurchaseOptimizer() {
     const result = runOptimization({
       homePrice, totalSavings, stockPortfolio, mortgageRate: mortgageRate/100, cashOutRefiRate: cashOutRefiRate/100, loanTerm,
       appreciationRate: homeAppreciation/100, investmentReturn: investmentReturn/100,
-      dividendYield: dividendYield/100, monthlyRent, marginRate: marginRate/100, helocRate: helocRate/100,
+      dividendYield: dividendYield/100, monthlyRent, rentGrowthRate: rentGrowth/100, marginRate: marginRate/100, helocRate: helocRate/100,
       fedRate, caRate, stateTax, stdDeduction, minBuffer, filingStatus, grossIncome
     });
     setOptimizationResult(result);
     setActiveTab('optimize');
-  }, [homePrice, totalSavings, stockPortfolio, mortgageRate, loanTerm, homeAppreciation, investmentReturn, monthlyRent, marginRate, helocRate, fedRate, caRate, stateTax, stdDeduction, minBuffer, grossIncome, filingStatus]);
+  }, [homePrice, totalSavings, stockPortfolio, mortgageRate, loanTerm, homeAppreciation, investmentReturn, monthlyRent, rentGrowth, marginRate, helocRate, fedRate, caRate, stateTax, stdDeduction, minBuffer, grossIncome, filingStatus]);
 
   // Manual scenario calculation
   const manualScenario = useMemo(() => {
@@ -731,6 +735,7 @@ export default function HomePurchaseOptimizer() {
       investmentReturn: investmentReturn / 100,
       dividendYield: dividendYield / 100,
       monthlyRent,
+      rentGrowthRate: rentGrowth / 100,
       marginRate: marginRate / 100,
       helocRate: helocRate / 100,
       fedRate,
@@ -740,7 +745,7 @@ export default function HomePurchaseOptimizer() {
       filingStatus,
       grossIncome
     });
-  }, [homePrice, manualDpPct, manualMarginPct, manualHelocPct, stockPortfolio, mortgageRate, loanTerm, homeAppreciation, investmentReturn, dividendYield, monthlyRent, marginRate, helocRate, fedRate, caRate, stateTax, stdDeduction, filingStatus, grossIncome]);
+  }, [homePrice, manualDpPct, manualMarginPct, manualHelocPct, stockPortfolio, mortgageRate, loanTerm, homeAppreciation, investmentReturn, dividendYield, monthlyRent, rentGrowth, marginRate, helocRate, fedRate, caRate, stateTax, stdDeduction, filingStatus, grossIncome]);
   
   const manualRemaining = totalSavings - manualScenario.cashDown - manualScenario.txCosts.buy + manualScenario.helocAmount;
   const canManualHELOC = manualScenario.cashDown + (stockPortfolio * manualMarginPct / 100) >= homePrice;
@@ -1219,8 +1224,67 @@ export default function HomePurchaseOptimizer() {
 
     const { reasons, risks, deductionNotes } = getRecommendationExplanation();
 
+    // Quick verdict calculations
+    const advantage10 = opt.yearlyAnalysis?.[9]?.advantage || 0;
+    const advantage20 = opt.yearlyAnalysis?.[19]?.advantage || 0;
+    const buyWins = advantage10 > 0;
+    const monthlyNetCost = opt.nonRecovBreakdown.netTotal / 12;
+    const monthlyVsRent = monthlyNetCost - monthlyRent;
+
+    // Generate verdict
+    const getVerdict = () => {
+      if (advantage10 > 500000) return { emoji: '🎯', verdict: 'Strong Buy', color: '#22c55e', desc: 'Buying clearly wins financially' };
+      if (advantage10 > 100000) return { emoji: '✅', verdict: 'Buy', color: '#4ade80', desc: 'Buying is the better choice' };
+      if (advantage10 > -100000) return { emoji: '⚖️', verdict: 'Close Call', color: '#fbbf24', desc: 'Similar outcomes either way' };
+      if (advantage10 > -500000) return { emoji: '🤔', verdict: 'Consider Renting', color: '#fb923c', desc: 'Renting may be better financially' };
+      return { emoji: '🏃', verdict: 'Rent', color: '#f87171', desc: 'Renting is significantly better' };
+    };
+
+    const verdict = getVerdict();
+
     return (
       <>
+        {/* QUICK VERDICT - The Answer at a Glance */}
+        <div style={{
+          background: `linear-gradient(135deg, ${verdict.color}15, ${verdict.color}08)`,
+          borderRadius: '20px',
+          padding: '24px',
+          border: `2px solid ${verdict.color}50`,
+          marginBottom: '24px',
+          textAlign: 'center'
+        }}>
+          <div style={{ fontSize: '3rem', marginBottom: '8px' }}>{verdict.emoji}</div>
+          <div style={{ fontSize: '2rem', fontWeight: '700', color: verdict.color, marginBottom: '4px' }}>{verdict.verdict}</div>
+          <div style={{ fontSize: '1rem', color: '#c0c0d0', marginBottom: '16px' }}>{verdict.desc}</div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginTop: '16px' }}>
+            <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '10px', padding: '12px' }}>
+              <div style={{ fontSize: '0.7rem', color: '#8b8ba7', marginBottom: '4px' }}>10-Year Advantage</div>
+              <div style={{ fontSize: '1.1rem', fontWeight: '700', color: advantage10 >= 0 ? '#4ade80' : '#f87171' }}>
+                {advantage10 >= 0 ? '+' : ''}{fmt$(advantage10)}
+              </div>
+            </div>
+            <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '10px', padding: '12px' }}>
+              <div style={{ fontSize: '0.7rem', color: '#8b8ba7', marginBottom: '4px' }}>Monthly vs Rent</div>
+              <div style={{ fontSize: '1.1rem', fontWeight: '700', color: monthlyVsRent <= 0 ? '#4ade80' : '#f87171' }}>
+                {monthlyVsRent > 0 ? '+' : ''}{fmt$(monthlyVsRent)}
+              </div>
+            </div>
+            <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '10px', padding: '12px' }}>
+              <div style={{ fontSize: '0.7rem', color: '#8b8ba7', marginBottom: '4px' }}>Break-Even</div>
+              <div style={{ fontSize: '1.1rem', fontWeight: '700', color: '#fff' }}>
+                {opt.breakEvenYear === 'Never' ? 'Never' : `Year ${opt.breakEvenYear}`}
+              </div>
+            </div>
+            <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '10px', padding: '12px' }}>
+              <div style={{ fontSize: '0.7rem', color: '#8b8ba7', marginBottom: '4px' }}>Tax Savings</div>
+              <div style={{ fontSize: '1.1rem', fontWeight: '700', color: '#4ade80' }}>
+                {fmt$(opt.totalTaxBenefit)}/yr
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* Diagnostics - why certain strategies may not appear */}
         {diag && !optimizationResult.canBuyCash && (
           <div style={s.warning}>
@@ -1737,6 +1801,7 @@ export default function HomePurchaseOptimizer() {
         investmentReturn: investmentReturn / 100,
         dividendYield: dividendYield / 100,
         monthlyRent,
+        rentGrowthRate: rentGrowth / 100,
         marginRate: marginRate / 100,
         helocRate: helocRate / 100,
         fedRate,
@@ -1750,7 +1815,7 @@ export default function HomePurchaseOptimizer() {
       const remaining = totalSavings - result.cashDown - result.txCosts.buy + result.helocAmount;
       return { ...sc, ...result, remaining };
     });
-  }, [scenarios, homePrice, stockPortfolio, loanTerm, homeAppreciation, investmentReturn, dividendYield, monthlyRent, marginRate, helocRate, fedRate, caRate, stateTax, stdDeduction, filingStatus, totalSavings, grossIncome]);
+  }, [scenarios, homePrice, stockPortfolio, loanTerm, homeAppreciation, investmentReturn, dividendYield, monthlyRent, rentGrowth, marginRate, helocRate, fedRate, caRate, stateTax, stdDeduction, filingStatus, totalSavings, grossIncome]);
 
   const updateScenario = (id, field, value) => {
     setScenarios(prev => prev.map(s => s.id === id ? { ...s, [field]: value } : s));
@@ -1833,8 +1898,10 @@ export default function HomePurchaseOptimizer() {
                   <span style={{ color: '#fff', fontWeight: '600' }}>Year {sc.breakEvenYear}</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
-                  <span style={{ color: '#8b8ba7' }}>20-Yr Wealth</span>
-                  <span style={{ color: colors[idx % colors.length], fontWeight: '600' }}>{fmt$(sc.ownerWealth20)}</span>
+                  <span style={{ color: '#8b8ba7' }}>20-Yr Advantage</span>
+                  <span style={{ color: (sc.ownerWealth20 - sc.renterWealth20) >= 0 ? '#4ade80' : '#f87171', fontWeight: '600' }}>
+                    {(sc.ownerWealth20 - sc.renterWealth20) >= 0 ? '+' : ''}{fmt$(sc.ownerWealth20 - sc.renterWealth20)}
+                  </span>
                 </div>
               </div>
             </div>
@@ -1910,9 +1977,24 @@ export default function HomePurchaseOptimizer() {
                 <td style={{ ...s.td, fontWeight: '600' }}>Break-Even Year</td>
                 {scenarioResults.map(sc => <td key={sc.id} style={{ ...s.td, fontWeight: '600' }}>{sc.breakEvenYear}</td>)}
               </tr>
+              <tr>
+                <td style={s.td}>Home Equity (Year 20)</td>
+                {scenarioResults.map(sc => <td key={sc.id} style={s.td}>{fmt$(sc.ownerWealth20)}</td>)}
+              </tr>
+              <tr>
+                <td style={s.td}>Renter Wealth (Year 20)</td>
+                {scenarioResults.map(sc => <td key={sc.id} style={s.td}>{fmt$(sc.renterWealth20)}</td>)}
+              </tr>
               <tr style={{ background: 'rgba(255,255,255,0.05)' }}>
-                <td style={{ ...s.td, fontWeight: '700', fontSize: '0.95rem' }}>20-Year Wealth</td>
-                {scenarioResults.map((sc, idx) => <td key={sc.id} style={{ ...s.td, fontWeight: '700', fontSize: '0.95rem', color: colors[idx % colors.length] }}>{fmt$(sc.ownerWealth20)}</td>)}
+                <td style={{ ...s.td, fontWeight: '700', fontSize: '0.95rem' }}>Buy vs Rent Advantage</td>
+                {scenarioResults.map((sc, idx) => {
+                  const advantage = sc.ownerWealth20 - sc.renterWealth20;
+                  return (
+                    <td key={sc.id} style={{ ...s.td, fontWeight: '700', fontSize: '0.95rem', color: advantage >= 0 ? '#4ade80' : '#f87171' }}>
+                      {advantage >= 0 ? '+' : ''}{fmt$(advantage)}
+                    </td>
+                  );
+                })}
               </tr>
             </tbody>
           </table>
@@ -1980,7 +2062,8 @@ export default function HomePurchaseOptimizer() {
 
     // Itemization analysis
     const fedItemized = fedDeductibleMortgageInt + federalSALTDeduction;
-    const caItemized = caDeductibleMortgageInt + caSALTDeduction;
+    // For CA: you CANNOT deduct CA state tax from CA state taxes - only mortgage interest + property tax
+    const caItemized = caDeductibleMortgageInt + annualPropTax; // Only property tax, not state income tax
     const shouldItemizeFed = fedItemized > stdDeduction;
     const caStd = filingStatus === 'married' ? 10726 : 5363;
     const shouldItemizeCA = caItemized > caStd;
@@ -2266,6 +2349,7 @@ export default function HomePurchaseOptimizer() {
             <div style={{ fontSize: '0.7rem', color: '#8b8ba7', marginTop: '4px' }}>For investment interest deduction limit (actual income only)</div>
           </div>
           <div style={s.inputGroup}><label style={s.label}>Home Appreciation (%)</label><input type="number" step="0.5" style={s.input} value={homeAppreciation} onChange={e => setHomeAppreciation(Number(e.target.value))} /></div>
+          <div style={s.inputGroup}><label style={s.label}>Rent Growth (%/yr)</label><input type="number" step="0.5" style={s.input} value={rentGrowth} onChange={e => setRentGrowth(Number(e.target.value))} /></div>
 
           {/* Collapsible Monthly Budget Section */}
           <div style={{ marginTop: '20px' }}>
@@ -2326,11 +2410,11 @@ export default function HomePurchaseOptimizer() {
         
         <main>
           <div style={s.tabs}>
-            <button style={{ ...s.tab, ...(activeTab === 'optimize' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('optimize')}>Optimized Plan</button>
-            <button style={{ ...s.tab, ...(activeTab === 'scenarios' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('scenarios')}>Compare Scenarios</button>
-            <button style={{ ...s.tab, ...(activeTab === 'manual' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('manual')}>Manual Mode</button>
-            <button style={{ ...s.tab, ...(activeTab === 'tax' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('tax')}>Tax Analysis</button>
-            <button style={{ ...s.tab, ...(activeTab === 'holding' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('holding')}>Holding Period</button>
+            <button style={{ ...s.tab, ...(activeTab === 'optimize' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('optimize')}>Summary</button>
+            <button style={{ ...s.tab, ...(activeTab === 'scenarios' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('scenarios')}>Compare</button>
+            <button style={{ ...s.tab, ...(activeTab === 'holding' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('holding')}>Own vs Rent</button>
+            <button style={{ ...s.tab, ...(activeTab === 'tax' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('tax')}>Taxes</button>
+            <button style={{ ...s.tab, ...(activeTab === 'manual' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('manual')}>Manual</button>
           </div>
 
           {activeTab === 'optimize' && renderOptimize()}
