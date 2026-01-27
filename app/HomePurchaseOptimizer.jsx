@@ -52,8 +52,13 @@ const getFedRate = (inc, stat) => {
 const getCARate = (inc, stat) => {
   const m = stat === 'married' ? 2 : 1;
   const br = [{min:0,max:10412,r:0.01},{min:10412,max:24684,r:0.02},{min:24684,max:38959,r:0.04},{min:38959,max:54081,r:0.06},{min:54081,max:68350,r:0.08},{min:68350,max:349137,r:0.093},{min:349137,max:418961,r:0.103},{min:418961,max:698271,r:0.113},{min:698271,max:Infinity,r:0.123}];
-  for (const b of br) if (inc >= b.min * m && inc < b.max * m) return b.r;
-  return 0.123;
+  let baseRate = 0.123; // Default to top bracket
+  for (const b of br) {
+    if (inc >= b.min * m && inc < b.max * m) { baseRate = b.r; break; }
+  }
+  // Add CA Mental Health Services Tax (1% on income over $1M)
+  if (inc > 1000000 * m) baseRate += 0.01;
+  return baseRate;
 };
 
 const calcMonthly = (p, r, y) => { if (p <= 0) return 0; const mr = r/12, n = y*12; return mr === 0 ? p/n : p*(mr*Math.pow(1+mr,n))/(Math.pow(1+mr,n)-1); };
@@ -261,10 +266,24 @@ const calcScenario = (params) => {
     const prop13Savings = marketPropTax - yPropTax;
     
     // Owner's yearly costs (what they pay from income)
-    const yMortgageInt = amortData.yearlyInterest || (mortgageLoan * mortgageRate * Math.pow(0.97, y));
+    const yMortgageInt = amortData.yearlyInterest || (acquisitionDebtInterest * Math.pow(0.97, y));
     const yMortgagePrincipal = amortData.yearlyPrincipal || (amort.monthlyPayment * 12 - yMortgageInt);
-    const yItemized = yMortgageInt * (mortgageLoan <= 750000 ? 1 : 750000/mortgageLoan) + saltCapped;
-    const yMortgageBenefit = yItemized > stdDeduction ? (yItemized - stdDeduction) * fedRate : 0;
+
+    // Recalculate SALT each year based on actual property tax (changes with Prop 13)
+    const ySaltCapped = Math.min(stateTax + yPropTax, 10000); // Federal $10K cap
+    const ySaltFull = stateTax + yPropTax; // CA has no cap
+
+    // Federal benefit: $750K mortgage limit + $10K SALT cap
+    const yFedDeductibleInt = yMortgageInt * (acquisitionDebt <= 750000 ? 1 : 750000/acquisitionDebt);
+    const yFedItemized = yFedDeductibleInt + ySaltCapped;
+    const yFedMortgageBenefit = yFedItemized > stdDeduction ? (yFedItemized - stdDeduction) * fedRate : 0;
+
+    // CA benefit: $1M mortgage limit + NO SALT cap
+    const yCADeductibleInt = yMortgageInt * (acquisitionDebt <= 1000000 ? 1 : 1000000/acquisitionDebt);
+    const yCAItemized = yCADeductibleInt + ySaltFull;
+    const yCAMortgageBenefit = yCAItemized > caStdDeduction ? (yCAItemized - caStdDeduction) * caRate : 0;
+
+    const yMortgageBenefit = yFedMortgageBenefit + yCAMortgageBenefit;
     const yInvestBenefit = investInterestTaxBenefit;
     const yTotalBenefit = yMortgageBenefit + yInvestBenefit;
     
