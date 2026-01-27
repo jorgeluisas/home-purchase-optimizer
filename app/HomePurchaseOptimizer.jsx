@@ -898,7 +898,7 @@ export default function HomePurchaseOptimizer() {
           <div style={s.inputGroup}>
             <label style={s.label}>Margin Loan: {manualMarginPct}% of portfolio ({fmt$(stockPortfolio * manualMarginPct / 100)})</label>
             <input type="range" min="0" max="30" value={manualMarginPct} onChange={e => setManualMarginPct(Number(e.target.value))} style={s.slider} />
-            {manualMarginPct > 25 && <div style={{ color: '#fbbf24', fontSize: '0.8rem', marginTop: '4px' }}>⚠️ High margin (>25%) increases margin call risk</div>}
+            {manualMarginPct > 25 && <div style={{ color: '#fbbf24', fontSize: '0.8rem', marginTop: '4px' }}>⚠️ High margin ({'>'}25%) increases margin call risk</div>}
           </div>
           
           <div style={s.inputGroup}>
