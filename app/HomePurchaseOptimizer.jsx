@@ -2210,37 +2210,63 @@ export default function HomePurchaseOptimizer() {
         <div style={s.card}>
           <h3 style={{ ...s.section, marginTop: 0 }}>Should You Itemize?</h3>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
+            {/* Federal Breakdown */}
             <div>
               <div style={{ fontSize: '0.9rem', color: '#60a5fa', fontWeight: '600', marginBottom: '12px' }}>Federal</div>
-              <div style={s.costLine}><span>Your Itemized Total:</span><span>{fmt$(tb.fedItemized)}</span></div>
-              <div style={s.costLine}><span>Standard Deduction:</span><span>{fmt$(stdDeduction)}</span></div>
+
+              {/* Itemized Components Breakdown */}
+              <div style={{ background: 'rgba(59,130,246,0.05)', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
+                <div style={{ fontSize: '0.75rem', color: '#8b8ba7', marginBottom: '8px', textTransform: 'uppercase' }}>Itemized Deduction Breakdown</div>
+                <div style={s.costLine}><span>Mortgage Interest:</span><span>{fmt$(tb.fedDeductibleMortgageInt)}</span></div>
+                <div style={s.costLine}><span>SALT (capped at $10K):</span><span>{fmt$(tb.federalSALTDeduction)}</span></div>
+                <div style={{ ...s.costLine, fontWeight: '600', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '8px', marginTop: '6px' }}>
+                  <span>Total Itemized:</span><span style={{ color: '#60a5fa' }}>{fmt$(tb.fedItemized)}</span>
+                </div>
+              </div>
+
+              <div style={s.costLine}><span>vs Standard Deduction:</span><span>{fmt$(stdDeduction)}</span></div>
               <div style={{ marginTop: '12px', padding: '10px', borderRadius: '8px', textAlign: 'center',
                 background: tb.shouldItemizeFed ? 'rgba(74,222,128,0.15)' : 'rgba(248,113,113,0.15)',
                 border: tb.shouldItemizeFed ? '1px solid rgba(74,222,128,0.4)' : '1px solid rgba(248,113,113,0.4)',
                 color: tb.shouldItemizeFed ? '#4ade80' : '#f87171'
               }}>
-                {tb.shouldItemizeFed ? '✓ Itemize (saves ' + fmt$(tb.fedItemized - stdDeduction) + ')' : '✗ Take Standard Deduction'}
+                {tb.shouldItemizeFed ? '✓ Itemize (+' + fmt$(tb.fedItemized - stdDeduction) + ' extra deductions)' : '✗ Take Standard Deduction'}
               </div>
             </div>
+
+            {/* California Breakdown */}
             <div>
               <div style={{ fontSize: '0.9rem', color: '#eab308', fontWeight: '600', marginBottom: '12px' }}>California</div>
-              <div style={s.costLine}><span>Your Itemized Total:</span><span>{fmt$(tb.caItemized)}</span></div>
-              <div style={s.costLine}><span>Standard Deduction:</span><span>{fmt$(tb.caStd)}</span></div>
+
+              {/* Itemized Components Breakdown */}
+              <div style={{ background: 'rgba(234,179,8,0.05)', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
+                <div style={{ fontSize: '0.75rem', color: '#8b8ba7', marginBottom: '8px', textTransform: 'uppercase' }}>Itemized Deduction Breakdown</div>
+                <div style={s.costLine}><span>Mortgage Interest:</span><span>{fmt$(tb.caDeductibleMortgageInt)}</span></div>
+                <div style={s.costLine}><span>Property Tax (no cap):</span><span>{fmt$(tb.annualPropTax)}</span></div>
+                <div style={{ fontSize: '0.7rem', color: '#8b8ba7', marginTop: '4px', fontStyle: 'italic' }}>Note: CA state tax not deductible from CA taxes</div>
+                <div style={{ ...s.costLine, fontWeight: '600', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '8px', marginTop: '6px' }}>
+                  <span>Total Itemized:</span><span style={{ color: '#eab308' }}>{fmt$(tb.caItemized)}</span>
+                </div>
+              </div>
+
+              <div style={s.costLine}><span>vs Standard Deduction:</span><span>{fmt$(tb.caStd)}</span></div>
               <div style={{ marginTop: '12px', padding: '10px', borderRadius: '8px', textAlign: 'center',
                 background: tb.shouldItemizeCA ? 'rgba(74,222,128,0.15)' : 'rgba(248,113,113,0.15)',
                 border: tb.shouldItemizeCA ? '1px solid rgba(74,222,128,0.4)' : '1px solid rgba(248,113,113,0.4)',
                 color: tb.shouldItemizeCA ? '#4ade80' : '#f87171'
               }}>
-                {tb.shouldItemizeCA ? '✓ Itemize (saves ' + fmt$(tb.caItemized - tb.caStd) + ')' : '✗ Take Standard Deduction'}
+                {tb.shouldItemizeCA ? '✓ Itemize (+' + fmt$(tb.caItemized - tb.caStd) + ' extra deductions)' : '✗ Take Standard Deduction'}
               </div>
             </div>
           </div>
         </div>
 
-        {/* Annual Tax Savings Summary */}
+        {/* Annual Tax Savings Summary with Calculation Breakdown */}
         <div style={{ background: 'linear-gradient(135deg, rgba(74,222,128,0.15), rgba(34,197,94,0.1))', borderRadius: '20px', padding: '28px', border: '2px solid rgba(74,222,128,0.4)', marginBottom: '20px' }}>
           <h3 style={{ fontSize: '1.1rem', fontWeight: '600', color: '#4ade80', marginTop: 0, marginBottom: '20px' }}>💰 Estimated Annual Tax Savings from Homeownership</h3>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
+
+          {/* Summary Row */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', marginBottom: '24px' }}>
             <div style={{ textAlign: 'center' }}>
               <div style={{ fontSize: '0.75rem', color: '#8b8ba7', marginBottom: '4px' }}>Federal Savings</div>
               <div style={{ fontSize: '1.5rem', fontWeight: '700', color: '#4ade80' }}>{fmt$(tb.fedTaxSavings)}</div>
@@ -2254,6 +2280,54 @@ export default function HomePurchaseOptimizer() {
               <div style={{ fontSize: '1.8rem', fontWeight: '700', color: '#fff' }}>{fmt$(tb.totalTaxSavings)}</div>
             </div>
           </div>
+
+          {/* Calculation Breakdown */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', borderTop: '1px solid rgba(74,222,128,0.3)', paddingTop: '20px' }}>
+            {/* Federal Calculation */}
+            <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '12px', padding: '16px' }}>
+              <div style={{ fontSize: '0.75rem', color: '#60a5fa', textTransform: 'uppercase', marginBottom: '12px', fontWeight: '600' }}>Federal Savings Breakdown</div>
+              {tb.shouldItemizeFed ? (
+                <>
+                  <div style={{ ...s.costLine, fontSize: '0.85rem' }}><span>Itemized total:</span><span>{fmt$(tb.fedItemized)}</span></div>
+                  <div style={{ ...s.costLine, fontSize: '0.85rem', color: '#f87171' }}><span>Minus standard deduction:</span><span>-{fmt$(stdDeduction)}</span></div>
+                  <div style={{ ...s.costLine, fontSize: '0.85rem', fontWeight: '600', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '8px', marginTop: '6px' }}>
+                    <span>Extra deductions:</span><span>{fmt$(Math.max(0, tb.fedItemized - stdDeduction))}</span>
+                  </div>
+                  <div style={{ ...s.costLine, fontSize: '0.85rem', color: '#fb923c' }}><span>Times marginal rate:</span><span>× {fmtPct(tb.fedRate)}</span></div>
+                  <div style={{ ...s.costLine, fontSize: '0.95rem', fontWeight: '700', color: '#4ade80', borderTop: '1px solid rgba(74,222,128,0.3)', paddingTop: '8px', marginTop: '6px' }}>
+                    <span>Federal tax savings:</span><span>{fmt$(tb.fedTaxSavings)}</span>
+                  </div>
+                </>
+              ) : (
+                <div style={{ fontSize: '0.85rem', color: '#8b8ba7', fontStyle: 'italic' }}>
+                  Standard deduction ({fmt$(stdDeduction)}) exceeds itemized ({fmt$(tb.fedItemized)}). No additional federal savings from homeownership deductions.
+                </div>
+              )}
+            </div>
+
+            {/* California Calculation */}
+            <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '12px', padding: '16px' }}>
+              <div style={{ fontSize: '0.75rem', color: '#eab308', textTransform: 'uppercase', marginBottom: '12px', fontWeight: '600' }}>California Savings Breakdown</div>
+              {tb.shouldItemizeCA ? (
+                <>
+                  <div style={{ ...s.costLine, fontSize: '0.85rem' }}><span>Itemized total:</span><span>{fmt$(tb.caItemized)}</span></div>
+                  <div style={{ ...s.costLine, fontSize: '0.85rem', color: '#f87171' }}><span>Minus standard deduction:</span><span>-{fmt$(tb.caStd)}</span></div>
+                  <div style={{ ...s.costLine, fontSize: '0.85rem', fontWeight: '600', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '8px', marginTop: '6px' }}>
+                    <span>Extra deductions:</span><span>{fmt$(Math.max(0, tb.caItemized - tb.caStd))}</span>
+                  </div>
+                  <div style={{ ...s.costLine, fontSize: '0.85rem', color: '#fb923c' }}><span>Times marginal rate:</span><span>× {fmtPct(tb.caRate)}</span></div>
+                  <div style={{ ...s.costLine, fontSize: '0.95rem', fontWeight: '700', color: '#4ade80', borderTop: '1px solid rgba(74,222,128,0.3)', paddingTop: '8px', marginTop: '6px' }}>
+                    <span>California tax savings:</span><span>{fmt$(tb.caTaxSavings)}</span>
+                  </div>
+                </>
+              ) : (
+                <div style={{ fontSize: '0.85rem', color: '#8b8ba7', fontStyle: 'italic' }}>
+                  Standard deduction ({fmt$(tb.caStd)}) exceeds itemized ({fmt$(tb.caItemized)}). No additional CA savings from homeownership deductions.
+                </div>
+              )}
+            </div>
+          </div>
+
           <div style={{ marginTop: '16px', fontSize: '0.85rem', color: '#8b8ba7', textAlign: 'center' }}>
             Compared to renting (taking standard deduction) • {fmt$(tb.totalTaxSavings / 12)}/month effective savings
           </div>
