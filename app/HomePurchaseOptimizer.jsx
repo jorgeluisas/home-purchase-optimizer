@@ -659,8 +659,8 @@ const CurrencyInput = ({ value, onChange, label, min = 0, max = Infinity, style 
 
 // Main Component
 export default function HomePurchaseOptimizer() {
-  const [homePrice, setHomePrice] = useState(3500000);
-  const [totalSavings, setTotalSavings] = useState(2000000);
+  const [homePrice, setHomePrice] = useState(2000000);
+  const [totalSavings, setTotalSavings] = useState(1000000);
   const [stockPortfolio, setStockPortfolio] = useState(1500000);
   const [grossIncome, setGrossIncome] = useState(1500000);
   const [monthlyRent, setMonthlyRent] = useState(8000);
@@ -691,9 +691,6 @@ export default function HomePurchaseOptimizer() {
     { id: 2, name: 'Scenario B', dpPct: 30, mortgageRate: 6.5, marginPct: 15, helocPct: 0 },
   ]);
 
-  // Monthly budget state
-  const [showBudgetSection, setShowBudgetSection] = useState(false);
-  const [monthlyTakeHome, setMonthlyTakeHome] = useState(null); // null means use estimated
   
   const toggleInfo = (id) => setOpenInfoBoxes(p => ({ ...p, [id]: !p[id] }));
   
@@ -891,13 +888,12 @@ export default function HomePurchaseOptimizer() {
     </div>
   );
 
-  // Calculate estimated monthly take-home if not provided
+  // Calculate estimated monthly take-home
   const estimatedTakeHome = useMemo(() => {
-    if (monthlyTakeHome !== null) return monthlyTakeHome;
     // Estimate: gross income * (1 - ~40% for high CA earners) / 12
     const effectiveTaxRate = combRate * 0.7; // Rough approximation considering progressive brackets
     return Math.round((grossIncome * (1 - effectiveTaxRate)) / 12);
-  }, [monthlyTakeHome, grossIncome, combRate]);
+  }, [grossIncome, combRate]);
 
   // Feature 1: Total Wealth Impact Summary
   const renderWealthImpactSummary = (opt) => {
@@ -1003,7 +999,7 @@ export default function HomePurchaseOptimizer() {
     );
   };
 
-  // Feature 2: Monthly Cash Flow Impact
+  // Feature 2: Monthly Cash Flow Impact with Payment Timing
   const renderMonthlyCashFlow = (opt) => {
     if (!opt) return null;
 
@@ -1032,13 +1028,18 @@ export default function HomePurchaseOptimizer() {
     const remainingPct = afterPurchaseCashFlow / takeHome;
     const showWarning = remainingPct < 0.20;
 
+    // Annual amounts for timing calendar
+    const annualPropTax = nr.propertyTax;
+    const annualInsurance = nr.insurance;
+    const annualTaxBenefit = opt.totalTaxBenefit;
+
     return (
       <div style={s.card}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px' }}>
           <div style={{ fontSize: '1.5rem' }}>💵</div>
           <div>
             <h3 style={{ ...s.section, marginTop: 0, marginBottom: '4px' }}>Monthly Cash Flow Impact</h3>
-            <p style={{ margin: 0, color: '#8b8ba7', fontSize: '0.85rem' }}>How this purchase affects your monthly budget</p>
+            <p style={{ margin: 0, color: '#8b8ba7', fontSize: '0.85rem' }}>How this purchase affects your family budget</p>
           </div>
         </div>
 
@@ -1087,14 +1088,103 @@ export default function HomePurchaseOptimizer() {
           </div>
         </div>
 
+        {/* Payment Timing Calendar */}
+        <div style={{ background: 'linear-gradient(135deg, rgba(139,92,246,0.1), rgba(59,130,246,0.1))', borderRadius: '12px', padding: '20px', marginBottom: '20px', border: '1px solid rgba(139,92,246,0.3)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
+            <span style={{ fontSize: '1.2rem' }}>📅</span>
+            <div style={{ fontSize: '0.9rem', color: '#a78bfa', fontWeight: '600' }}>Payment Timing Calendar</div>
+          </div>
+          <div style={{ fontSize: '0.8rem', color: '#8b8ba7', marginBottom: '16px' }}>
+            Plan your family budget around when each expense actually hits your bank account
+          </div>
+
+          <div style={{ display: 'grid', gap: '12px' }}>
+            {/* Monthly Payments */}
+            <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '8px', padding: '12px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ background: '#4ade80', width: '8px', height: '8px', borderRadius: '50%' }}></span>
+                  <span style={{ color: '#fff', fontWeight: '600', fontSize: '0.85rem' }}>Every Month</span>
+                </div>
+                <span style={{ color: '#4ade80', fontWeight: '700' }}>{fmt$(monthlyPI)}</span>
+              </div>
+              <div style={{ fontSize: '0.8rem', color: '#8b8ba7', paddingLeft: '16px' }}>
+                Mortgage P&I{opt.pmi?.monthly > 0 ? ' + PMI' : ''} - due 1st of each month
+              </div>
+            </div>
+
+            {/* Semi-Annual: Property Tax (SF pays twice per year) */}
+            <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '8px', padding: '12px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ background: '#fbbf24', width: '8px', height: '8px', borderRadius: '50%' }}></span>
+                  <span style={{ color: '#fff', fontWeight: '600', fontSize: '0.85rem' }}>Twice Per Year</span>
+                </div>
+                <span style={{ color: '#fbbf24', fontWeight: '700' }}>{fmt$(annualPropTax / 2)} each</span>
+              </div>
+              <div style={{ fontSize: '0.8rem', color: '#8b8ba7', paddingLeft: '16px' }}>
+                Property Tax - due <strong>Dec 10</strong> (1st installment) and <strong>Apr 10</strong> (2nd installment)
+              </div>
+              <div style={{ fontSize: '0.75rem', color: '#6b7280', paddingLeft: '16px', marginTop: '4px' }}>
+                Total annual: {fmt$(annualPropTax)} | Monthly reserve needed: {fmt$(annualPropTax / 12)}
+              </div>
+            </div>
+
+            {/* Annual: Insurance */}
+            <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '8px', padding: '12px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ background: '#60a5fa', width: '8px', height: '8px', borderRadius: '50%' }}></span>
+                  <span style={{ color: '#fff', fontWeight: '600', fontSize: '0.85rem' }}>Once Per Year</span>
+                </div>
+                <span style={{ color: '#60a5fa', fontWeight: '700' }}>{fmt$(annualInsurance)}</span>
+              </div>
+              <div style={{ fontSize: '0.8rem', color: '#8b8ba7', paddingLeft: '16px' }}>
+                Homeowners Insurance - typically due on purchase anniversary
+              </div>
+              <div style={{ fontSize: '0.75rem', color: '#6b7280', paddingLeft: '16px', marginTop: '4px' }}>
+                Monthly reserve needed: {fmt$(annualInsurance / 12)}
+              </div>
+            </div>
+
+            {/* Tax Refund */}
+            <div style={{ background: 'rgba(74,222,128,0.1)', borderRadius: '8px', padding: '12px', border: '1px solid rgba(74,222,128,0.2)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ background: '#22c55e', width: '8px', height: '8px', borderRadius: '50%' }}></span>
+                  <span style={{ color: '#fff', fontWeight: '600', fontSize: '0.85rem' }}>Tax Season (April)</span>
+                </div>
+                <span style={{ color: '#22c55e', fontWeight: '700' }}>+{fmt$(annualTaxBenefit)}</span>
+              </div>
+              <div style={{ fontSize: '0.8rem', color: '#8b8ba7', paddingLeft: '16px' }}>
+                Tax savings from mortgage interest & property tax deductions
+              </div>
+              <div style={{ fontSize: '0.75rem', color: '#6b7280', paddingLeft: '16px', marginTop: '4px' }}>
+                Tip: Adjust W-4 withholding to get this monthly instead of waiting for refund
+              </div>
+            </div>
+          </div>
+
+          {/* High-expense months warning */}
+          <div style={{ marginTop: '16px', padding: '12px', background: 'rgba(251,191,36,0.1)', borderRadius: '8px', border: '1px solid rgba(251,191,36,0.2)' }}>
+            <div style={{ fontSize: '0.85rem', color: '#fbbf24', fontWeight: '600', marginBottom: '6px' }}>
+              High-Expense Months to Plan For
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '0.8rem', color: '#d0d0e0' }}>
+              <div><strong>December:</strong> P&I + Property Tax = {fmt$(monthlyPI + annualPropTax / 2)}</div>
+              <div><strong>April:</strong> P&I + Property Tax = {fmt$(monthlyPI + annualPropTax / 2)}</div>
+            </div>
+          </div>
+        </div>
+
         {/* Detailed Monthly Breakdown */}
         <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '12px', padding: '16px', marginBottom: '16px' }}>
-          <div style={{ fontSize: '0.85rem', color: '#8b8ba7', fontWeight: '600', marginBottom: '12px' }}>Monthly Housing Cost Breakdown</div>
+          <div style={{ fontSize: '0.85rem', color: '#8b8ba7', fontWeight: '600', marginBottom: '12px' }}>Monthly Housing Cost Breakdown (Averaged)</div>
 
           <div style={s.costLine}><span>Principal & Interest (+ PMI)</span><span>{fmt$(monthlyPI)}</span></div>
-          <div style={s.costLine}><span>Property Tax</span><span>{fmt$(monthlyPropTax)}</span></div>
-          <div style={s.costLine}><span>Homeowners Insurance</span><span>{fmt$(monthlyInsurance)}</span></div>
-          <div style={s.costLine}><span>Maintenance (1%/yr)</span><span>{fmt$(monthlyMaintenance)}</span></div>
+          <div style={s.costLine}><span>Property Tax (averaged)</span><span>{fmt$(monthlyPropTax)}</span></div>
+          <div style={s.costLine}><span>Homeowners Insurance (averaged)</span><span>{fmt$(monthlyInsurance)}</span></div>
+          <div style={s.costLine}><span>Maintenance Reserve (1%/yr)</span><span>{fmt$(monthlyMaintenance)}</span></div>
           {monthlyMarginInt > 0 && <div style={s.costLine}><span>Margin Interest</span><span>{fmt$(monthlyMarginInt)}</span></div>}
           {monthlyHelocInt > 0 && <div style={s.costLine}><span>HELOC Interest</span><span>{fmt$(monthlyHelocInt)}</span></div>}
           {monthlyCashOutInt > 0 && <div style={s.costLine}><span>Cash-Out Refi Interest</span><span>{fmt$(monthlyCashOutInt)}</span></div>}
@@ -1103,7 +1193,7 @@ export default function HomePurchaseOptimizer() {
             <span>Gross Monthly Housing</span><span>{fmt$(grossMonthlyHousing)}</span>
           </div>
 
-          <div style={s.costLine}><span style={{ color: '#4ade80' }}>Tax Benefit (monthly)</span><span style={{ color: '#4ade80' }}>-{fmt$(monthlyTaxBenefit)}</span></div>
+          <div style={s.costLine}><span style={{ color: '#4ade80' }}>Tax Benefit (averaged)</span><span style={{ color: '#4ade80' }}>-{fmt$(monthlyTaxBenefit)}</span></div>
 
           <div style={{ ...s.costLine, fontWeight: '700', fontSize: '1rem', borderTop: '2px solid rgba(255,255,255,0.2)', paddingTop: '10px', marginTop: '8px' }}>
             <span>Net Monthly Housing Cost</span><span style={{ color: '#fff' }}>{fmt$(netMonthlyHousing)}</span>
@@ -1127,12 +1217,9 @@ export default function HomePurchaseOptimizer() {
           </div>
         )}
 
-        {/* Note about take-home estimate */}
-        {monthlyTakeHome === null && (
-          <div style={{ marginTop: '12px', fontSize: '0.8rem', color: '#8b8ba7', fontStyle: 'italic' }}>
-            * Take-home pay estimated from gross income. Adjust in the Monthly Budget section for more accuracy.
-          </div>
-        )}
+        <div style={{ marginTop: '12px', fontSize: '0.8rem', color: '#8b8ba7', fontStyle: 'italic' }}>
+          * Take-home pay estimated from gross income at ~{fmtPctWhole((1 - combRate * 0.7) * 100)} take-home rate
+        </div>
       </div>
     );
   };
@@ -2424,60 +2511,6 @@ export default function HomePurchaseOptimizer() {
           </div>
           <div style={s.inputGroup}><label style={s.label}>Home Appreciation (%)</label><input type="number" step="0.5" style={s.input} value={homeAppreciation} onChange={e => setHomeAppreciation(Number(e.target.value))} /></div>
           <div style={s.inputGroup}><label style={s.label}>Rent Growth (%/yr)</label><input type="number" step="0.5" style={s.input} value={rentGrowth} onChange={e => setRentGrowth(Number(e.target.value))} /></div>
-
-          {/* Collapsible Monthly Budget Section */}
-          <div style={{ marginTop: '20px' }}>
-            <div
-              onClick={() => setShowBudgetSection(!showBudgetSection)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                cursor: 'pointer',
-                padding: '10px 12px',
-                background: 'rgba(255,255,255,0.03)',
-                borderRadius: '8px',
-                border: '1px solid rgba(255,255,255,0.08)'
-              }}
-            >
-              <span style={{ fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '1.5px', color: '#8b8ba7', fontWeight: '600' }}>Monthly Budget (Optional)</span>
-              <span style={{ color: '#8b8ba7', fontSize: '0.8rem' }}>{showBudgetSection ? '▼' : '▶'}</span>
-            </div>
-            {showBudgetSection && (
-              <div style={{ marginTop: '12px' }}>
-                <div style={s.inputGroup}>
-                  <label style={s.label}>Monthly Take-Home Pay</label>
-                  <CurrencyInput
-                    style={s.input}
-                    value={monthlyTakeHome || estimatedTakeHome}
-                    onChange={(v) => setMonthlyTakeHome(v)}
-                    min={0}
-                    max={500000}
-                  />
-                  <div style={{ fontSize: '0.7rem', color: '#8b8ba7', marginTop: '4px' }}>
-                    {monthlyTakeHome === null ? `Estimated from gross income (~${fmtPctWhole((1 - combRate * 0.7) * 100)} take-home rate)` : 'Custom value set'}
-                  </div>
-                </div>
-                {monthlyTakeHome !== null && (
-                  <button
-                    onClick={() => setMonthlyTakeHome(null)}
-                    style={{
-                      background: 'rgba(248,113,113,0.1)',
-                      border: '1px solid rgba(248,113,113,0.3)',
-                      color: '#f87171',
-                      padding: '6px 12px',
-                      borderRadius: '6px',
-                      fontSize: '0.75rem',
-                      cursor: 'pointer',
-                      marginTop: '8px'
-                    }}
-                  >
-                    Reset to Estimate
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
 
           <button style={s.btn} onClick={handleOptimize}>🚀 Run Optimization</button>
         </aside>
