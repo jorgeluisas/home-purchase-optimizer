@@ -616,6 +616,72 @@ const runOptimization = (params) => {
   };
 };
 
+// Affordability calculator - closed-form solution (all costs linear in home price)
+const calcAffordability = ({ grossIncome, totalSavings, mortgageRate, loanTerm, minBuffer, monthlyHOA = 0, monthlyOtherDebt = 0 }) => {
+  const DTI_TIERS = [
+    { name: 'Conservative', dti: 0.28, desc: 'Standard 28/36 rule', color: '#4ade80' },
+    { name: 'Moderate', dti: 0.33, desc: 'Comfortable for high earners', color: '#60a5fa' },
+    { name: 'Aggressive', dti: 0.40, desc: 'Requires disciplined budgeting', color: '#fbbf24' },
+    { name: 'Stretch', dti: 0.43, desc: 'Max most lenders approve', color: '#f87171' },
+  ];
+  const DP_OPTIONS = [0.10, 0.20, 0.30, 0.50, 1.00];
+  const rate = mortgageRate / 100;
+  const mr = rate / 12;
+  const n = loanTerm * 12;
+  const insuranceRate = 0.0035; // annual homeowners insurance as % of home price
+  const pmiRate = 0.005; // annual PMI as % of loan amount
+
+  const tiers = DTI_TIERS.map((tier, tierIdx) => {
+    const maxMonthlyHousing = (grossIncome * tier.dti / 12) - monthlyOtherDebt;
+    const options = DP_OPTIONS.map(dpPct => {
+      if (maxMonthlyHousing <= 0) return { dpPct, maxPrice: 0, monthlyPITI: 0, cashNeeded: 0, remaining: 0, limitedBy: 'income', monthlyBreakdown: { pi: 0, tax: 0, insurance: 0, pmi: 0, hoa: 0 } };
+
+      const loanFrac = 1 - dpPct;
+      // P&I payment factor per dollar of home price
+      const piFactor = loanFrac > 0 ? (mr === 0 ? loanFrac / n : loanFrac * (mr * Math.pow(1 + mr, n)) / (Math.pow(1 + mr, n) - 1)) : 0;
+      // Monthly property tax per dollar of home price
+      const taxFactor = SF.propTaxRate / 12;
+      // Monthly insurance per dollar of home price
+      const insFactor = insuranceRate / 12;
+      // Monthly PMI per dollar of home price (only if LTV > 80%)
+      const pmiFactor = loanFrac > 0.80 ? (loanFrac * pmiRate / 12) : 0;
+      // Total per-dollar monthly cost
+      const perDollarCost = piFactor + taxFactor + insFactor + pmiFactor;
+      // Fixed monthly costs (HOA + parcel tax)
+      const fixedMonthly = monthlyHOA + (SF.parcelTax / 12);
+
+      // Solve: maxMonthlyHousing = perDollarCost * H + fixedMonthly
+      const maxPriceByIncome = perDollarCost > 0 ? (maxMonthlyHousing - fixedMonthly) / perDollarCost : 0;
+
+      // Savings constraint: down payment + closing costs <= totalSavings - minBuffer
+      const availableCash = totalSavings - minBuffer;
+      const closingFactor = SF.closeBuy + SF.transferTax + loanFrac * 0.005 + 0.003; // approximate closing cost %
+      const cashPerDollar = dpPct + closingFactor;
+      const fixedClosing = 2500; // fixed closing costs (inspections etc.)
+      const maxPriceBySavings = cashPerDollar > 0 ? (availableCash - fixedClosing) / cashPerDollar : 0;
+
+      const limitedBy = maxPriceByIncome <= maxPriceBySavings ? 'income' : 'savings';
+      const maxPrice = Math.max(0, Math.floor(Math.min(maxPriceByIncome, maxPriceBySavings)));
+
+      // Calculate actual monthly breakdown at this price
+      const loan = maxPrice * loanFrac;
+      const pi = loanFrac > 0 ? calcMonthly(loan, rate, loanTerm) : 0;
+      const tax = maxPrice * SF.propTaxRate / 12;
+      const insurance = maxPrice * insuranceRate / 12;
+      const pmi = loanFrac > 0.80 ? loan * pmiRate / 12 : 0;
+      const monthlyPITI = pi + tax + insurance + pmi + monthlyHOA;
+
+      const txCosts = calcTxCosts(maxPrice, loan);
+      const cashNeeded = maxPrice * dpPct + txCosts.buy;
+      const remaining = totalSavings - cashNeeded;
+
+      return { dpPct, maxPrice, monthlyPITI, cashNeeded, remaining, limitedBy, monthlyBreakdown: { pi, tax, insurance, pmi, hoa: monthlyHOA } };
+    });
+    return { ...tier, tierIdx, options };
+  });
+  return { tiers, DTI_TIERS, DP_OPTIONS };
+};
+
 // Format helpers
 const fmt$ = (v) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(v || 0);
 const fmtPct = (v) => `${((v || 0) * 100).toFixed(2)}%`;
@@ -680,7 +746,13 @@ export default function HomePurchaseOptimizer() {
   const [manualDpPct, setManualDpPct] = useState(30);
   const [manualMarginPct, setManualMarginPct] = useState(0);
   const [manualHelocPct, setManualHelocPct] = useState(0);
-  
+
+  // Affordability tab state
+  const [affMonthlyHOA, setAffMonthlyHOA] = useState(0);
+  const [affMonthlyOtherDebt, setAffMonthlyOtherDebt] = useState(0);
+  const [affSelectedDpPct, setAffSelectedDpPct] = useState(0.20);
+  const [affSelectedTier, setAffSelectedTier] = useState(1); // Default: Moderate
+
   const [activeTab, setActiveTab] = useState('optimize');
   const [optimizationResult, setOptimizationResult] = useState(null);
   const [openInfoBoxes, setOpenInfoBoxes] = useState({});
@@ -746,6 +818,17 @@ export default function HomePurchaseOptimizer() {
   
   const manualRemaining = totalSavings - manualScenario.cashDown - manualScenario.txCosts.buy + manualScenario.helocAmount;
   const canManualHELOC = manualScenario.cashDown + (stockPortfolio * manualMarginPct / 100) >= homePrice;
+
+  // Affordability calculation (memoized)
+  const affordability = useMemo(() => calcAffordability({
+    grossIncome,
+    totalSavings,
+    mortgageRate,
+    loanTerm,
+    minBuffer,
+    monthlyHOA: affMonthlyHOA,
+    monthlyOtherDebt: affMonthlyOtherDebt,
+  }), [grossIncome, totalSavings, mortgageRate, loanTerm, minBuffer, affMonthlyHOA, affMonthlyOtherDebt]);
 
   const s = {
     container: { fontFamily: "'IBM Plex Sans', -apple-system, sans-serif", background: 'linear-gradient(135deg, #0c1220 0%, #1a1a2e 50%, #16213e 100%)', minHeight: '100vh', color: '#e0e0e0', padding: '24px' },
@@ -2468,6 +2551,186 @@ export default function HomePurchaseOptimizer() {
     );
   };
 
+  const renderAffordability = () => {
+    const { tiers } = affordability;
+    const selectedTierData = tiers[affSelectedTier];
+    const selectedOption = selectedTierData?.options.find(o => o.dpPct === affSelectedDpPct);
+
+    return (
+      <>
+        <InfoBox title="Understanding DTI Ratios" isOpen={openInfoBoxes['dti']} onToggle={() => toggleInfo('dti')}
+          recommendation={{ type: 'maybe', text: 'Most financial advisors recommend staying at or below 28% DTI for housing. High earners with stable income may comfortably exceed this.' }}>
+          <p><strong>DTI (Debt-to-Income)</strong> is the percentage of your gross monthly income that goes toward housing costs. Lenders use this to determine how much you can borrow.</p>
+          <p style={{ marginTop: '8px' }}>The <strong>28/36 rule</strong> suggests spending no more than 28% of gross income on housing and 36% on total debt. However, high earners often safely exceed these thresholds since basic living costs are a smaller share of their budget.</p>
+          <p style={{ marginTop: '8px' }}>This calculator shows max home prices at four DTI levels so you can see the trade-offs. All calculations use gross PITI (Principal, Interest, Taxes, Insurance) — the same method lenders use for qualification.</p>
+        </InfoBox>
+
+        {/* Additional Inputs */}
+        <div style={s.card}>
+          <h3 style={{ ...s.section, marginTop: 0 }}>Additional Monthly Costs</h3>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+            <div style={s.inputGroup}>
+              <label style={s.label}>Monthly HOA</label>
+              <CurrencyInput value={affMonthlyHOA} onChange={setAffMonthlyHOA} min={0} max={5000} style={s.input} />
+            </div>
+            <div style={s.inputGroup}>
+              <label style={s.label}>Other Monthly Debt (car, student loans, etc.)</label>
+              <CurrencyInput value={affMonthlyOtherDebt} onChange={setAffMonthlyOtherDebt} min={0} max={50000} style={s.input} />
+            </div>
+          </div>
+        </div>
+
+        {/* Context Bar */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '20px' }}>
+          {[
+            { label: 'Gross Monthly', value: fmt$(grossIncome / 12) },
+            { label: 'Available Savings', value: fmt$(totalSavings - minBuffer) },
+            { label: 'Mortgage Rate', value: `${mortgageRate}%` },
+            { label: 'Min Buffer', value: fmt$(minBuffer) },
+          ].map((item, i) => (
+            <div key={i} style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '10px', padding: '14px', textAlign: 'center' }}>
+              <div style={{ fontSize: '0.7rem', color: '#8b8ba7', textTransform: 'uppercase', marginBottom: '4px' }}>{item.label}</div>
+              <div style={{ fontSize: '1.1rem', fontWeight: '600', color: '#fff' }}>{item.value}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Tier Headline Cards */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '24px' }}>
+          {tiers.map((tier, idx) => {
+            const opt20 = tier.options.find(o => o.dpPct === 0.20);
+            const isSelected = affSelectedTier === idx;
+            return (
+              <div key={idx} onClick={() => setAffSelectedTier(idx)} style={{
+                background: isSelected ? `rgba(${tier.color === '#4ade80' ? '74,222,128' : tier.color === '#60a5fa' ? '96,165,250' : tier.color === '#fbbf24' ? '251,191,36' : '248,113,113'},0.15)` : 'rgba(255,255,255,0.03)',
+                borderRadius: '14px', padding: '20px', cursor: 'pointer',
+                border: isSelected ? `2px solid ${tier.color}` : '1px solid rgba(255,255,255,0.06)',
+                transition: 'all 0.2s',
+              }}>
+                <div style={{ fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '1px', color: tier.color, marginBottom: '8px', fontWeight: '600' }}>{tier.name}</div>
+                <div style={{ fontSize: '0.8rem', color: '#8b8ba7', marginBottom: '12px' }}>{fmtPctWhole(tier.dti * 100)} DTI</div>
+                <div style={{ fontSize: '1.4rem', fontWeight: '700', color: '#fff', marginBottom: '4px' }}>{opt20 ? fmt$(opt20.maxPrice) : '$0'}</div>
+                <div style={{ fontSize: '0.75rem', color: '#8b8ba7' }}>at 20% down</div>
+                {opt20 && opt20.maxPrice > 0 && (
+                  <div style={{ fontSize: '0.8rem', color: '#b0b0c0', marginTop: '8px' }}>{fmt$(opt20.monthlyPITI)}/mo</div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Detail Table for Selected Tier */}
+        {selectedTierData && (
+          <div style={s.card}>
+            <h3 style={{ ...s.section, marginTop: 0 }}>
+              <span style={{ color: selectedTierData.color }}>{selectedTierData.name}</span> — {fmtPctWhole(selectedTierData.dti * 100)} DTI Details
+            </h3>
+            <p style={{ fontSize: '0.85rem', color: '#8b8ba7', marginBottom: '16px' }}>{selectedTierData.desc}</p>
+            <table style={s.table}>
+              <thead>
+                <tr>
+                  <th style={s.th}>Down %</th>
+                  <th style={s.th}>Max Price</th>
+                  <th style={s.th}>Monthly PITI</th>
+                  <th style={s.th}>Cash Needed</th>
+                  <th style={s.th}>Remaining</th>
+                  <th style={s.th}>Limited By</th>
+                  <th style={s.th}></th>
+                </tr>
+              </thead>
+              <tbody>
+                {selectedTierData.options.map((opt, i) => (
+                  <tr key={i} style={opt.dpPct === affSelectedDpPct ? { background: 'rgba(249,115,22,0.08)' } : {}}>
+                    <td style={s.td}>{fmtPctWhole(opt.dpPct * 100)}</td>
+                    <td style={{ ...s.td, fontWeight: '600', color: '#fff' }}>{fmt$(opt.maxPrice)}</td>
+                    <td style={s.td}>{fmt$(opt.monthlyPITI)}</td>
+                    <td style={s.td}>{fmt$(opt.cashNeeded)}</td>
+                    <td style={{ ...s.td, color: opt.remaining < 0 ? '#f87171' : '#4ade80' }}>{fmt$(opt.remaining)}</td>
+                    <td style={s.td}>
+                      <span style={{ ...s.badge, ...(opt.limitedBy === 'income' ? s.badgeYellow : s.badgePurple) }}>
+                        {opt.limitedBy === 'income' ? 'Income' : 'Savings'}
+                      </span>
+                    </td>
+                    <td style={s.td}>
+                      {opt.maxPrice > 0 && (
+                        <button onClick={() => { setHomePrice(opt.maxPrice); setActiveTab('optimize'); }} style={{
+                          padding: '6px 14px', borderRadius: '6px', border: 'none', cursor: 'pointer', fontSize: '0.75rem', fontWeight: '600',
+                          background: 'linear-gradient(135deg, #f97316, #eab308)', color: '#fff', whiteSpace: 'nowrap',
+                        }}>Use This Price</button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* Monthly Cost Breakdown */}
+        {selectedOption && selectedOption.maxPrice > 0 && (
+          <div style={s.card}>
+            <h3 style={{ ...s.section, marginTop: 0 }}>Monthly Cost Breakdown — {fmt$(selectedOption.maxPrice)} at {fmtPctWhole(affSelectedDpPct * 100)} Down</h3>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '12px', marginBottom: '16px' }}>
+              {[
+                { label: 'P&I', value: selectedOption.monthlyBreakdown.pi, color: '#60a5fa' },
+                { label: 'Property Tax', value: selectedOption.monthlyBreakdown.tax, color: '#f97316' },
+                { label: 'Insurance', value: selectedOption.monthlyBreakdown.insurance, color: '#a78bfa' },
+                { label: 'PMI', value: selectedOption.monthlyBreakdown.pmi, color: '#f87171' },
+                { label: 'HOA', value: selectedOption.monthlyBreakdown.hoa, color: '#4ade80' },
+              ].map((item, i) => (
+                <div key={i} style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '10px', padding: '14px', textAlign: 'center' }}>
+                  <div style={{ fontSize: '0.7rem', color: item.color, textTransform: 'uppercase', marginBottom: '6px' }}>{item.label}</div>
+                  <div style={{ fontSize: '1.1rem', fontWeight: '600', color: '#fff' }}>{fmt$(item.value)}</div>
+                </div>
+              ))}
+            </div>
+            {/* Visual bar breakdown */}
+            {(() => {
+              const bd = selectedOption.monthlyBreakdown;
+              const total = bd.pi + bd.tax + bd.insurance + bd.pmi + bd.hoa;
+              if (total <= 0) return null;
+              const segments = [
+                { label: 'P&I', value: bd.pi, color: '#60a5fa' },
+                { label: 'Tax', value: bd.tax, color: '#f97316' },
+                { label: 'Ins', value: bd.insurance, color: '#a78bfa' },
+                { label: 'PMI', value: bd.pmi, color: '#f87171' },
+                { label: 'HOA', value: bd.hoa, color: '#4ade80' },
+              ].filter(seg => seg.value > 0);
+              return (
+                <div style={{ display: 'flex', borderRadius: '8px', overflow: 'hidden', height: '28px' }}>
+                  {segments.map((seg, i) => (
+                    <div key={i} title={`${seg.label}: ${fmt$(seg.value)} (${((seg.value / total) * 100).toFixed(0)}%)`}
+                      style={{ width: `${(seg.value / total) * 100}%`, background: seg.color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.65rem', fontWeight: '600', color: '#000', minWidth: seg.value / total > 0.05 ? '30px' : '0' }}>
+                      {seg.value / total > 0.08 ? seg.label : ''}
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+          </div>
+        )}
+
+        {/* Assumptions */}
+        <div style={{ ...s.card, background: 'rgba(255,255,255,0.02)' }}>
+          <h3 style={{ ...s.section, marginTop: 0 }}>Assumptions & Methodology</h3>
+          <div style={{ fontSize: '0.82rem', color: '#8b8ba7', lineHeight: '1.7' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 24px' }}>
+              <div>Property Tax Rate: {fmtPct(SF.propTaxRate)} (SF average)</div>
+              <div>Homeowners Insurance: 0.35% of home price</div>
+              <div>PMI: 0.50% of loan/yr (if LTV {'>'} 80%)</div>
+              <div>Parcel Tax: {fmt$(SF.parcelTax)}/yr</div>
+              <div>Closing Costs: ~{fmtPct(SF.closeBuy)} + transfer tax</div>
+              <div>Loan Term: {loanTerm} years fixed</div>
+            </div>
+            <p style={{ marginTop: '12px', fontStyle: 'italic' }}>
+              Qualification uses gross PITI (the same method lenders use). Tax benefits from mortgage interest deductions are NOT included here — see the Taxes tab for that analysis.
+            </p>
+          </div>
+        </div>
+      </>
+    );
+  };
+
   return (
     <div style={s.container}>
       <header style={s.header}>
@@ -2522,6 +2785,7 @@ export default function HomePurchaseOptimizer() {
             <button style={{ ...s.tab, ...(activeTab === 'holding' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('holding')}>Own vs Rent</button>
             <button style={{ ...s.tab, ...(activeTab === 'tax' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('tax')}>Taxes</button>
             <button style={{ ...s.tab, ...(activeTab === 'manual' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('manual')}>Manual</button>
+            <button style={{ ...s.tab, ...(activeTab === 'afford' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('afford')}>Afford</button>
           </div>
 
           {activeTab === 'optimize' && renderOptimize()}
@@ -2529,6 +2793,7 @@ export default function HomePurchaseOptimizer() {
           {activeTab === 'manual' && renderManual()}
           {activeTab === 'tax' && renderTax()}
           {activeTab === 'holding' && renderHolding()}
+          {activeTab === 'afford' && renderAffordability()}
         </main>
       </div>
     </div>
