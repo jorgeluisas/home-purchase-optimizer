@@ -617,69 +617,59 @@ const runOptimization = (params) => {
 };
 
 // Affordability calculator - closed-form solution (all costs linear in home price)
-const calcAffordability = ({ grossIncome, totalSavings, mortgageRate, loanTerm, minBuffer, monthlyHOA = 0, monthlyOtherDebt = 0 }) => {
-  const DTI_TIERS = [
-    { name: 'Conservative', dti: 0.28, desc: 'Standard 28/36 rule', color: '#4ade80' },
-    { name: 'Moderate', dti: 0.33, desc: 'Comfortable for high earners', color: '#60a5fa' },
-    { name: 'Aggressive', dti: 0.40, desc: 'Requires disciplined budgeting', color: '#fbbf24' },
-    { name: 'Stretch', dti: 0.43, desc: 'Max most lenders approve', color: '#f87171' },
-  ];
-  const DP_OPTIONS = [0.10, 0.20, 0.30, 0.50, 1.00];
+// Single 43% DTI ceiling (max lender approval), 4 leverage levels
+const calcAffordability = ({ grossIncome, totalSavings, mortgageRate, loanTerm, minBuffer, monthlyHOA = 0, monthlyOtherDebt = 0, monthlyRent = 0, effectiveTaxRate = 0.45 }) => {
+  const DTI_CEILING = 0.43; // Max most lenders approve
+  const DP_OPTIONS = [0.05, 0.10, 0.20, 0.30, 0.50];
   const rate = mortgageRate / 100;
   const mr = rate / 12;
   const n = loanTerm * 12;
-  const insuranceRate = 0.0035; // annual homeowners insurance as % of home price
-  const pmiRate = 0.005; // annual PMI as % of loan amount
+  const insuranceRate = 0.0035;
+  const pmiRate = 0.005;
+  const monthlyTakeHome = grossIncome * (1 - effectiveTaxRate) / 12;
+  const maxMonthlyHousing = (grossIncome * DTI_CEILING / 12) - monthlyOtherDebt;
 
-  const tiers = DTI_TIERS.map((tier, tierIdx) => {
-    const maxMonthlyHousing = (grossIncome * tier.dti / 12) - monthlyOtherDebt;
-    const options = DP_OPTIONS.map(dpPct => {
-      if (maxMonthlyHousing <= 0) return { dpPct, maxPrice: 0, monthlyPITI: 0, cashNeeded: 0, remaining: 0, limitedBy: 'income', monthlyBreakdown: { pi: 0, tax: 0, insurance: 0, pmi: 0, hoa: 0 } };
+  const options = DP_OPTIONS.map(dpPct => {
+    if (maxMonthlyHousing <= 0 || grossIncome <= 0) return { dpPct, maxPrice: 0, monthlyPITI: 0, cashNeeded: 0, remaining: 0, limitedBy: 'income', takeHomePct: 0, vsRent: 0, bufferMonths: 0, maxPriceByIncome: 0, monthlyBreakdown: { pi: 0, tax: 0, insurance: 0, pmi: 0, hoa: 0 } };
 
-      const loanFrac = 1 - dpPct;
-      // P&I payment factor per dollar of home price
-      const piFactor = loanFrac > 0 ? (mr === 0 ? loanFrac / n : loanFrac * (mr * Math.pow(1 + mr, n)) / (Math.pow(1 + mr, n) - 1)) : 0;
-      // Monthly property tax per dollar of home price
-      const taxFactor = SF.propTaxRate / 12;
-      // Monthly insurance per dollar of home price
-      const insFactor = insuranceRate / 12;
-      // Monthly PMI per dollar of home price (only if LTV > 80%)
-      const pmiFactor = loanFrac > 0.80 ? (loanFrac * pmiRate / 12) : 0;
-      // Total per-dollar monthly cost
-      const perDollarCost = piFactor + taxFactor + insFactor + pmiFactor;
-      // Fixed monthly costs (HOA + parcel tax)
-      const fixedMonthly = monthlyHOA + (SF.parcelTax / 12);
+    const loanFrac = 1 - dpPct;
+    const piFactor = loanFrac > 0 ? (mr === 0 ? loanFrac / n : loanFrac * (mr * Math.pow(1 + mr, n)) / (Math.pow(1 + mr, n) - 1)) : 0;
+    const taxFactor = SF.propTaxRate / 12;
+    const insFactor = insuranceRate / 12;
+    const pmiFactor = loanFrac > 0.80 ? (loanFrac * pmiRate / 12) : 0;
+    const perDollarCost = piFactor + taxFactor + insFactor + pmiFactor;
+    const fixedMonthly = monthlyHOA + (SF.parcelTax / 12);
 
-      // Solve: maxMonthlyHousing = perDollarCost * H + fixedMonthly
-      const maxPriceByIncome = perDollarCost > 0 ? (maxMonthlyHousing - fixedMonthly) / perDollarCost : 0;
+    const maxPriceByIncome = perDollarCost > 0 ? (maxMonthlyHousing - fixedMonthly) / perDollarCost : 0;
 
-      // Savings constraint: down payment + closing costs <= totalSavings - minBuffer
-      const availableCash = totalSavings - minBuffer;
-      const closingFactor = SF.closeBuy + SF.transferTax + loanFrac * 0.005 + 0.003; // approximate closing cost %
-      const cashPerDollar = dpPct + closingFactor;
-      const fixedClosing = 2500; // fixed closing costs (inspections etc.)
-      const maxPriceBySavings = cashPerDollar > 0 ? (availableCash - fixedClosing) / cashPerDollar : 0;
+    const availableCash = totalSavings - minBuffer;
+    const closingFactor = SF.closeBuy + SF.transferTax + loanFrac * 0.005 + 0.003;
+    const cashPerDollar = dpPct + closingFactor;
+    const fixedClosing = 2500;
+    const maxPriceBySavings = cashPerDollar > 0 ? (availableCash - fixedClosing) / cashPerDollar : 0;
 
-      const limitedBy = maxPriceByIncome <= maxPriceBySavings ? 'income' : 'savings';
-      const maxPrice = Math.max(0, Math.floor(Math.min(maxPriceByIncome, maxPriceBySavings)));
+    const limitedBy = maxPriceByIncome <= maxPriceBySavings ? 'income' : 'savings';
+    const maxPrice = Math.max(0, Math.floor(Math.min(maxPriceByIncome, maxPriceBySavings)));
 
-      // Calculate actual monthly breakdown at this price
-      const loan = maxPrice * loanFrac;
-      const pi = loanFrac > 0 ? calcMonthly(loan, rate, loanTerm) : 0;
-      const tax = maxPrice * SF.propTaxRate / 12;
-      const insurance = maxPrice * insuranceRate / 12;
-      const pmi = loanFrac > 0.80 ? loan * pmiRate / 12 : 0;
-      const monthlyPITI = pi + tax + insurance + pmi + monthlyHOA;
+    const loan = maxPrice * loanFrac;
+    const pi = loanFrac > 0 ? calcMonthly(loan, rate, loanTerm) : 0;
+    const tax = maxPrice * SF.propTaxRate / 12;
+    const insurance = maxPrice * insuranceRate / 12;
+    const pmi = loanFrac > 0.80 ? loan * pmiRate / 12 : 0;
+    const monthlyPITI = pi + tax + insurance + pmi + monthlyHOA;
 
-      const txCosts = calcTxCosts(maxPrice, loan);
-      const cashNeeded = maxPrice * dpPct + txCosts.buy;
-      const remaining = totalSavings - cashNeeded;
+    const txCosts = calcTxCosts(maxPrice, loan);
+    const cashNeeded = maxPrice * dpPct + txCosts.buy;
+    const remaining = totalSavings - cashNeeded;
 
-      return { dpPct, maxPrice, monthlyPITI, cashNeeded, remaining, limitedBy, monthlyBreakdown: { pi, tax, insurance, pmi, hoa: monthlyHOA } };
-    });
-    return { ...tier, tierIdx, options };
+    const takeHomePct = monthlyTakeHome > 0 ? monthlyPITI / monthlyTakeHome : 0;
+    const vsRent = monthlyPITI - monthlyRent;
+    const bufferMonths = monthlyPITI > 0 ? remaining / monthlyPITI : 0;
+
+    return { dpPct, maxPrice, monthlyPITI, cashNeeded, remaining, limitedBy, takeHomePct, vsRent, bufferMonths, maxPriceByIncome: Math.floor(Math.max(0, maxPriceByIncome)), monthlyBreakdown: { pi, tax, insurance, pmi, hoa: monthlyHOA } };
   });
-  return { tiers, DTI_TIERS, DP_OPTIONS };
+
+  return { options, monthlyTakeHome };
 };
 
 // Format helpers
@@ -751,7 +741,6 @@ export default function HomePurchaseOptimizer() {
   const [affMonthlyHOA, setAffMonthlyHOA] = useState(0);
   const [affMonthlyOtherDebt, setAffMonthlyOtherDebt] = useState(0);
   const [affSelectedDpPct, setAffSelectedDpPct] = useState(0.20);
-  const [affSelectedTier, setAffSelectedTier] = useState(1); // Default: Moderate
 
   const [activeTab, setActiveTab] = useState('optimize');
   const [optimizationResult, setOptimizationResult] = useState(null);
@@ -820,6 +809,14 @@ export default function HomePurchaseOptimizer() {
   const canManualHELOC = manualScenario.cashDown + (stockPortfolio * manualMarginPct / 100) >= homePrice;
 
   // Affordability calculation (memoized)
+  // Estimate effective tax rate: state tax (actual $) + approximate federal + FICA
+  const estEffectiveTaxRate = useMemo(() => {
+    if (grossIncome <= 0) return 0;
+    const fica = grossIncome * 0.0145 + Math.max(0, grossIncome - 200000) * 0.009; // Medicare + additional
+    const estFedTax = grossIncome * fedRate * 0.72; // Effective ≈ 72% of marginal for progressive brackets
+    return Math.min(0.55, (stateTax + estFedTax + fica) / grossIncome);
+  }, [grossIncome, stateTax, fedRate]);
+
   const affordability = useMemo(() => calcAffordability({
     grossIncome,
     totalSavings,
@@ -828,7 +825,9 @@ export default function HomePurchaseOptimizer() {
     minBuffer,
     monthlyHOA: affMonthlyHOA,
     monthlyOtherDebt: affMonthlyOtherDebt,
-  }), [grossIncome, totalSavings, mortgageRate, loanTerm, minBuffer, affMonthlyHOA, affMonthlyOtherDebt]);
+    monthlyRent,
+    effectiveTaxRate: estEffectiveTaxRate,
+  }), [grossIncome, totalSavings, mortgageRate, loanTerm, minBuffer, affMonthlyHOA, affMonthlyOtherDebt, monthlyRent, estEffectiveTaxRate]);
 
   const s = {
     container: { fontFamily: "'IBM Plex Sans', -apple-system, sans-serif", background: 'linear-gradient(135deg, #0c1220 0%, #1a1a2e 50%, #16213e 100%)', minHeight: '100vh', color: '#e0e0e0', padding: '24px' },
@@ -2552,56 +2551,66 @@ export default function HomePurchaseOptimizer() {
   };
 
   const renderAffordability = () => {
-    const { tiers } = affordability;
-    // Use 43% DTI (max lender ceiling) to find the true max at each leverage level
-    const ceilingTier = tiers[3];
-    const grossMonthly = grossIncome / 12;
+    const { options, monthlyTakeHome } = affordability;
 
     const leverageLabels = {
-      1.00: { name: 'All Cash', desc: 'No mortgage, no monthly payment beyond taxes & insurance', leverage: 'None' },
-      0.50: { name: 'Conservative', desc: 'Large down payment keeps monthly costs low and builds instant equity', leverage: 'Low' },
-      0.30: { name: 'Moderate', desc: 'Solid equity position from day one with manageable payments', leverage: 'Medium' },
-      0.20: { name: 'Standard', desc: 'Most common choice — avoids PMI while preserving cash for investments', leverage: 'Medium-High' },
-      0.10: { name: 'Aggressive', desc: 'Maximizes buying power but adds PMI until you reach 20% equity', leverage: 'High' },
+      0.50: { name: 'Play it Safe', desc: 'Large down payment, low monthly costs, instant equity' },
+      0.30: { name: 'Solid', desc: 'Strong equity from day one with manageable payments' },
+      0.20: { name: 'Sweet Spot', desc: 'Avoids PMI, balances buying power with financial flexibility' },
+      0.10: { name: 'Stretch', desc: 'More house, but PMI applies until you hit 20% equity' },
+      0.05: { name: 'Go Big', desc: 'Maximum buying power — PMI and higher monthly costs' },
     };
 
-    // Build options from ceiling tier, reversed so least leverage is first
-    const options = [...ceilingTier.options].reverse().map(opt => {
-      const label = leverageLabels[opt.dpPct] || { name: `${(opt.dpPct * 100).toFixed(0)}% Down`, desc: '', leverage: '' };
-      const actualDTI = grossMonthly > 0 && opt.dpPct < 1.00 ? opt.monthlyPITI / grossMonthly : 0;
-      return { ...opt, ...label, actualDTI };
-    });
+    // Reverse so cards go from least leverage (50%) to most (5%)
+    const displayOptions = [...options].reverse().map(opt => ({
+      ...opt,
+      ...(leverageLabels[opt.dpPct] || { name: `${(opt.dpPct * 100).toFixed(0)}% Down`, desc: '' }),
+    }));
 
-    // Recommendation: prefer 20% down (no PMI sweet spot), fall back to others
-    const recommended = options.find(o => o.dpPct === 0.20 && o.remaining >= 0 && o.maxPrice > 0)
-      || options.find(o => o.dpPct === 0.30 && o.remaining >= 0 && o.maxPrice > 0)
-      || options.find(o => o.remaining >= 0 && o.maxPrice > 0);
+    // Recommendation: prefer 20% (no PMI), fall back to 30%, then whatever works
+    const recommended = displayOptions.find(o => o.dpPct === 0.20 && o.remaining >= 0 && o.maxPrice > 0)
+      || displayOptions.find(o => o.dpPct === 0.30 && o.remaining >= 0 && o.maxPrice > 0)
+      || displayOptions.find(o => o.remaining >= 0 && o.maxPrice > 0);
 
-    const selected = options.find(o => o.dpPct === affSelectedDpPct) || options[0];
-
-    const dtiColor = (dti) => dti <= 0.28 ? '#4ade80' : dti <= 0.36 ? '#fbbf24' : '#f87171';
-    const dtiLabel = (dti) => dti <= 0.28 ? 'Comfortable' : dti <= 0.36 ? 'Manageable' : 'Stretched';
+    const selected = displayOptions.find(o => o.dpPct === affSelectedDpPct) || displayOptions[0];
+    const takeHomeColor = (pct) => pct <= 0.25 ? '#4ade80' : pct <= 0.40 ? '#fbbf24' : '#f87171';
 
     return (
       <>
-        {/* Hero Recommendation */}
+        {/* Section A: The Answer */}
         {recommended && recommended.maxPrice > 0 && (
           <div style={{ ...s.planCard, textAlign: 'center', marginBottom: '24px' }}>
-            <div style={{ fontSize: '0.8rem', color: '#f97316', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '8px' }}>Recommended Home Price</div>
-            <div style={{ fontSize: '3rem', fontWeight: '700', color: '#fff', marginBottom: '4px' }}>{fmt$(recommended.maxPrice)}</div>
-            <div style={{ fontSize: '1rem', color: '#b0b0c0', marginBottom: '16px' }}>
-              {fmtPctWhole(recommended.dpPct * 100)} down ({recommended.name}) · {recommended.dpPct < 1.00 ? `${fmt$(recommended.monthlyPITI)}/mo · ${fmtPct(recommended.actualDTI)} DTI` : 'No mortgage'}
+            <div style={{ fontSize: '0.8rem', color: '#f97316', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '12px' }}>Based on your situation, shop for homes around</div>
+            <div style={{ fontSize: '3.2rem', fontWeight: '700', color: '#fff', marginBottom: '8px' }}>{fmt$(recommended.maxPrice)}</div>
+            <div style={{ fontSize: '1rem', color: '#b0b0c0', marginBottom: '20px' }}>
+              {fmtPctWhole(recommended.dpPct * 100)} down · {fmt$(recommended.monthlyPITI)}/mo · {fmtPctWhole(recommended.takeHomePct * 100)} of take-home pay
             </div>
-            <div style={{ fontSize: '0.85rem', color: '#8b8ba7', marginBottom: '20px', maxWidth: '600px', margin: '0 auto 20px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', maxWidth: '500px', margin: '0 auto 20px' }}>
+              <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '10px', padding: '12px' }}>
+                <div style={{ fontSize: '0.65rem', color: '#8b8ba7', textTransform: 'uppercase', marginBottom: '4px' }}>vs Your Rent</div>
+                <div style={{ fontSize: '1rem', fontWeight: '600', color: recommended.vsRent > 0 ? '#fbbf24' : '#4ade80' }}>
+                  {recommended.vsRent >= 0 ? '+' : ''}{fmt$(recommended.vsRent)}/mo
+                </div>
+              </div>
+              <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '10px', padding: '12px' }}>
+                <div style={{ fontSize: '0.65rem', color: '#8b8ba7', textTransform: 'uppercase', marginBottom: '4px' }}>Savings After</div>
+                <div style={{ fontSize: '1rem', fontWeight: '600', color: '#4ade80' }}>{fmt$(recommended.remaining)}</div>
+              </div>
+              <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '10px', padding: '12px' }}>
+                <div style={{ fontSize: '0.65rem', color: '#8b8ba7', textTransform: 'uppercase', marginBottom: '4px' }}>Buffer Runway</div>
+                <div style={{ fontSize: '1rem', fontWeight: '600', color: '#4ade80' }}>{Math.floor(recommended.bufferMonths)} months</div>
+              </div>
+            </div>
+            <div style={{ fontSize: '0.85rem', color: '#8b8ba7', marginBottom: '20px', maxWidth: '550px', margin: '0 auto 20px', lineHeight: '1.6' }}>
               {recommended.dpPct === 0.20
-                ? 'Standard 20% down avoids PMI and balances buying power with financial flexibility. You keep more cash invested.'
+                ? `20% down avoids PMI, keeps ${fmtPctWhole((recommended.remaining / totalSavings) * 100)} of your savings invested, and housing is ${fmtPctWhole(recommended.takeHomePct * 100)} of your take-home — well within comfort zone.`
                 : recommended.dpPct === 0.30
-                ? 'At 30% down you build strong equity from day one while keeping a healthy savings buffer.'
+                ? `30% down builds strong equity and keeps your monthly at ${fmtPctWhole(recommended.takeHomePct * 100)} of take-home.`
                 : recommended.dpPct === 0.10
-                ? '10% down maximizes your buying power. PMI adds to monthly costs until you reach 20% equity.'
-                : recommended.dpPct >= 0.50
-                ? `With ${fmtPctWhole(recommended.dpPct * 100)} down, you minimize monthly costs and mortgage risk.`
-                : 'This balances your available cash with buying power.'}
+                ? `10% down gets you more house. PMI adds to costs until you reach 20% equity. Housing is ${fmtPctWhole(recommended.takeHomePct * 100)} of take-home.`
+                : recommended.dpPct === 0.50
+                ? `50% down minimizes your monthly payment to just ${fmtPctWhole(recommended.takeHomePct * 100)} of take-home.`
+                : `At ${fmtPctWhole(recommended.dpPct * 100)} down, housing is ${fmtPctWhole(recommended.takeHomePct * 100)} of your take-home pay.`}
             </div>
             <button onClick={() => { setHomePrice(recommended.maxPrice); setActiveTab('optimize'); }} style={{
               padding: '14px 32px', borderRadius: '10px', border: 'none', cursor: 'pointer', fontSize: '1rem', fontWeight: '600',
@@ -2625,15 +2634,17 @@ export default function HomePurchaseOptimizer() {
           </div>
         </div>
 
-        {/* Leverage Level Cards */}
-        <h3 style={s.section}>How Much House by Leverage Level</h3>
+        {/* Section B: The Spectrum */}
+        <h3 style={s.section}>What if you want more or less house?</h3>
         <p style={{ fontSize: '0.85rem', color: '#8b8ba7', marginBottom: '16px', marginTop: '-8px' }}>
-          Less down payment = more leverage = more house, but higher monthly costs. Click any option to see details.
+          Less down payment = more house, but higher monthly costs. Click to explore.
         </p>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '10px', marginBottom: '24px' }}>
-          {options.map((opt, i) => {
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '24px' }}>
+          {displayOptions.filter(o => o.dpPct !== 0.30).map((opt, i) => {
             const isSelected = opt.dpPct === affSelectedDpPct;
             const isRec = recommended && opt.dpPct === recommended.dpPct;
+            const thPct = opt.takeHomePct;
+            const barWidth = Math.min(100, Math.max(5, thPct * 200)); // scale 0-50% to 0-100% width
             return (
               <div key={i} onClick={() => setAffSelectedDpPct(opt.dpPct)} style={{
                 background: isSelected ? 'rgba(249,115,22,0.12)' : 'rgba(255,255,255,0.03)',
@@ -2642,28 +2653,23 @@ export default function HomePurchaseOptimizer() {
                 transition: 'all 0.2s', position: 'relative',
               }}>
                 {isRec && (
-                  <div style={{ position: 'absolute', top: '-8px', right: '8px', background: 'linear-gradient(135deg, #f97316, #eab308)', color: '#fff', fontSize: '0.55rem', fontWeight: '700', padding: '2px 8px', borderRadius: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Best Fit</div>
+                  <div style={{ position: 'absolute', top: '-8px', right: '8px', background: 'linear-gradient(135deg, #f97316, #eab308)', color: '#fff', fontSize: '0.55rem', fontWeight: '700', padding: '2px 8px', borderRadius: '4px', textTransform: 'uppercase' }}>Best Fit</div>
                 )}
                 <div style={{ fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '1px', color: isSelected ? '#f97316' : '#8b8ba7', marginBottom: '4px', fontWeight: '600' }}>{opt.name}</div>
                 <div style={{ fontSize: '0.7rem', color: '#666', marginBottom: '10px' }}>{fmtPctWhole(opt.dpPct * 100)} down</div>
-                <div style={{ fontSize: '1.3rem', fontWeight: '700', color: '#fff', marginBottom: '6px' }}>{fmt$(opt.maxPrice)}</div>
-                {opt.dpPct < 1.00 && opt.maxPrice > 0 ? (
-                  <>
-                    <div style={{ fontSize: '0.8rem', color: '#b0b0c0', marginBottom: '4px' }}>{fmt$(opt.monthlyPITI)}/mo</div>
-                    <div style={{ fontSize: '0.7rem', color: dtiColor(opt.actualDTI), marginTop: '4px' }}>{fmtPct(opt.actualDTI)} DTI</div>
-                  </>
-                ) : opt.maxPrice > 0 ? (
-                  <div style={{ fontSize: '0.8rem', color: '#b0b0c0' }}>No mortgage</div>
-                ) : null}
-                <div style={{ fontSize: '0.65rem', color: opt.limitedBy === 'income' ? '#fbbf24' : '#a78bfa', marginTop: '6px', textTransform: 'uppercase' }}>
-                  {opt.limitedBy === 'income' ? 'Income limited' : 'Savings limited'}
+                <div style={{ fontSize: '1.4rem', fontWeight: '700', color: '#fff', marginBottom: '6px' }}>{fmt$(opt.maxPrice)}</div>
+                <div style={{ fontSize: '0.8rem', color: '#b0b0c0', marginBottom: '6px' }}>{fmt$(opt.monthlyPITI)}/mo</div>
+                {/* Take-home heat bar */}
+                <div style={{ background: 'rgba(0,0,0,0.3)', borderRadius: '4px', height: '6px', marginBottom: '6px', overflow: 'hidden' }}>
+                  <div style={{ width: `${barWidth}%`, height: '100%', borderRadius: '4px', background: takeHomeColor(thPct) }} />
                 </div>
+                <div style={{ fontSize: '0.7rem', color: takeHomeColor(thPct) }}>{fmtPctWhole(thPct * 100)} of take-home</div>
               </div>
             );
           })}
         </div>
 
-        {/* Selected Option Detail */}
+        {/* Section C: Selected Option Deep Dive */}
         <div style={s.card}>
           <h3 style={{ ...s.section, marginTop: 0 }}>{selected.name} — {fmtPctWhole(selected.dpPct * 100)} Down Payment</h3>
           <p style={{ fontSize: '0.85rem', color: '#8b8ba7', marginBottom: '16px' }}>{selected.desc}</p>
@@ -2673,7 +2679,7 @@ export default function HomePurchaseOptimizer() {
               { label: 'Max Home Price', value: fmt$(selected.maxPrice), color: '#fff' },
               { label: 'Cash Needed', value: fmt$(selected.cashNeeded), color: '#fff' },
               { label: 'Savings After', value: fmt$(selected.remaining), color: selected.remaining >= 0 ? '#4ade80' : '#f87171' },
-              { label: selected.dpPct < 1.00 ? 'DTI Ratio' : 'Leverage', value: selected.dpPct < 1.00 ? `${fmtPct(selected.actualDTI)} — ${dtiLabel(selected.actualDTI)}` : 'None', color: selected.dpPct < 1.00 ? dtiColor(selected.actualDTI) : '#4ade80' },
+              { label: 'Buffer Runway', value: selected.bufferMonths > 0 ? `${Math.floor(selected.bufferMonths)} months` : '—', color: selected.bufferMonths >= 12 ? '#4ade80' : selected.bufferMonths >= 6 ? '#fbbf24' : '#f87171' },
             ].map((item, i) => (
               <div key={i} style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '10px', padding: '14px', textAlign: 'center' }}>
                 <div style={{ fontSize: '0.7rem', color: '#8b8ba7', textTransform: 'uppercase', marginBottom: '4px' }}>{item.label}</div>
@@ -2682,8 +2688,8 @@ export default function HomePurchaseOptimizer() {
             ))}
           </div>
 
-          {/* Monthly Breakdown (only for mortgaged options) */}
-          {selected.maxPrice > 0 && selected.dpPct < 1.00 && (
+          {/* Monthly Breakdown */}
+          {selected.maxPrice > 0 && (
             <>
               <h4 style={{ fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '1px', color: '#8b8ba7', marginBottom: '12px' }}>Monthly Payment Breakdown</h4>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '10px', marginBottom: '14px' }}>
@@ -2725,74 +2731,77 @@ export default function HomePurchaseOptimizer() {
             </>
           )}
 
+          {/* Context comparisons */}
+          {selected.maxPrice > 0 && (
+            <div style={{ background: 'rgba(0,0,0,0.15)', borderRadius: '10px', padding: '16px', marginBottom: '16px' }}>
+              <div style={{ display: 'grid', gap: '10px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '0.85rem', color: '#8b8ba7' }}>vs Your Rent ({fmt$(monthlyRent)}/mo)</span>
+                  <span style={{ fontSize: '0.95rem', fontWeight: '600', color: selected.vsRent > 0 ? '#fbbf24' : '#4ade80' }}>
+                    {selected.vsRent >= 0 ? '+' : ''}{fmt$(selected.vsRent)}/mo
+                  </span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '0.85rem', color: '#8b8ba7' }}>Share of Take-Home (~{fmt$(monthlyTakeHome)}/mo)</span>
+                  <span style={{ fontSize: '0.95rem', fontWeight: '600', color: takeHomeColor(selected.takeHomePct) }}>
+                    {fmtPctWhole(selected.takeHomePct * 100)}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '0.85rem', color: '#8b8ba7' }}>
+                    {selected.limitedBy === 'savings'
+                      ? 'Your income supports up to'
+                      : 'Your savings support up to'}
+                  </span>
+                  <span style={{ fontSize: '0.95rem', fontWeight: '600', color: '#8b8ba7' }}>
+                    {selected.limitedBy === 'savings'
+                      ? fmt$(selected.maxPriceByIncome)
+                      : fmt$(totalSavings - minBuffer)}
+                  </span>
+                </div>
+                {selected.limitedBy === 'savings' && (
+                  <div style={{ fontSize: '0.8rem', color: '#a78bfa', fontStyle: 'italic' }}>
+                    You have the income for more house, but would need more cash saved to go higher at {fmtPctWhole(selected.dpPct * 100)} down.
+                  </div>
+                )}
+                {selected.limitedBy === 'income' && (
+                  <div style={{ fontSize: '0.8rem', color: '#fbbf24', fontStyle: 'italic' }}>
+                    You have the savings for a bigger down payment, but monthly costs would exceed lender limits.
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {selected.maxPrice > 0 && (
             <button onClick={() => { setHomePrice(selected.maxPrice); setActiveTab('optimize'); }} style={{
               width: '100%', padding: '14px', borderRadius: '10px', border: 'none', cursor: 'pointer', fontSize: '1rem', fontWeight: '600',
-              background: 'linear-gradient(135deg, #f97316, #eab308)', color: '#fff', marginTop: '4px',
+              background: 'linear-gradient(135deg, #f97316, #eab308)', color: '#fff',
             }}>Use {fmt$(selected.maxPrice)} as Home Price</button>
           )}
         </div>
 
-        {/* All Options Comparison Table */}
-        <div style={s.card}>
-          <h3 style={{ ...s.section, marginTop: 0 }}>All Options at a Glance</h3>
-          <table style={s.table}>
-            <thead>
-              <tr>
-                <th style={s.th}>Strategy</th>
-                <th style={s.th}>Down %</th>
-                <th style={s.th}>Max Home Price</th>
-                <th style={s.th}>Monthly</th>
-                <th style={s.th}>Cash Needed</th>
-                <th style={s.th}>Savings Left</th>
-                <th style={s.th}>DTI</th>
-                <th style={s.th}>Constraint</th>
-              </tr>
-            </thead>
-            <tbody>
-              {options.map((opt, i) => {
-                const isRec = recommended && opt.dpPct === recommended.dpPct;
-                return (
-                  <tr key={i} style={isRec ? { background: 'rgba(249,115,22,0.08)' } : {}} onClick={() => setAffSelectedDpPct(opt.dpPct)}>
-                    <td style={{ ...s.td, fontWeight: isRec ? '600' : '400', cursor: 'pointer' }}>{opt.name}{isRec ? ' *' : ''}</td>
-                    <td style={s.td}>{fmtPctWhole(opt.dpPct * 100)}</td>
-                    <td style={{ ...s.td, fontWeight: '600', color: '#fff' }}>{fmt$(opt.maxPrice)}</td>
-                    <td style={s.td}>{opt.dpPct < 1.00 ? fmt$(opt.monthlyPITI) : '—'}</td>
-                    <td style={s.td}>{fmt$(opt.cashNeeded)}</td>
-                    <td style={{ ...s.td, color: opt.remaining >= 0 ? '#4ade80' : '#f87171' }}>{fmt$(opt.remaining)}</td>
-                    <td style={{ ...s.td, color: opt.dpPct < 1.00 ? dtiColor(opt.actualDTI) : '#8b8ba7' }}>{opt.dpPct < 1.00 ? fmtPct(opt.actualDTI) : '—'}</td>
-                    <td style={s.td}>
-                      <span style={{ ...s.badge, ...(opt.limitedBy === 'income' ? s.badgeYellow : s.badgePurple) }}>
-                        {opt.limitedBy === 'income' ? 'Income' : 'Savings'}
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          <div style={{ fontSize: '0.75rem', color: '#8b8ba7', marginTop: '8px' }}>* Recommended option. Click any row to see details above.</div>
-        </div>
-
-        {/* Assumptions */}
+        {/* Section D: Assumptions */}
         <div style={{ ...s.card, background: 'rgba(255,255,255,0.02)' }}>
           <h3 style={{ ...s.section, marginTop: 0 }}>How This Works</h3>
           <div style={{ fontSize: '0.82rem', color: '#8b8ba7', lineHeight: '1.7' }}>
-            <p style={{ marginBottom: '10px' }}>For each leverage level, we calculate the maximum home price you can afford given two constraints:</p>
+            <p style={{ marginBottom: '10px' }}>For each down payment level, we find the maximum home price limited by whichever binds first:</p>
             <div style={{ padding: '10px 16px', background: 'rgba(0,0,0,0.15)', borderRadius: '8px', marginBottom: '10px' }}>
-              <strong style={{ color: '#fbbf24' }}>Income constraint:</strong> Monthly housing cost (PITI + HOA) cannot exceed 43% of gross income (max lender approval). Your actual DTI at the resulting price is shown above.
+              <strong style={{ color: '#fbbf24' }}>Income:</strong> Monthly housing cost (PITI + HOA) cannot exceed 43% of gross income — the max most lenders approve.
             </div>
             <div style={{ padding: '10px 16px', background: 'rgba(0,0,0,0.15)', borderRadius: '8px', marginBottom: '10px' }}>
-              <strong style={{ color: '#a78bfa' }}>Savings constraint:</strong> Down payment + closing costs cannot exceed your savings minus the {fmt$(minBuffer)} buffer you set in the sidebar.
+              <strong style={{ color: '#a78bfa' }}>Savings:</strong> Down payment + closing costs cannot exceed your savings minus {fmt$(minBuffer)} buffer.
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 24px', marginTop: '12px' }}>
               <div>Property Tax: {fmtPct(SF.propTaxRate)} (SF avg)</div>
               <div>Insurance: 0.35% of home price</div>
               <div>PMI: 0.50%/yr of loan (if {'<'}20% down)</div>
-              <div>Loan Term: {loanTerm} years at {mortgageRate}%</div>
+              <div>Loan: {loanTerm}yr at {mortgageRate}%</div>
+              <div>Take-home est: ~{fmtPctWhole((1 - estEffectiveTaxRate) * 100)} of gross</div>
+              <div>Closing: ~{fmtPct(SF.closeBuy)} + transfer tax</div>
             </div>
             <p style={{ marginTop: '10px', fontStyle: 'italic', fontSize: '0.8rem' }}>
-              Tax benefits from mortgage interest deductions are not included here — see the Taxes tab for that analysis.
+              Tax benefits from mortgage interest are not included — see the Taxes tab.
             </p>
           </div>
         </div>
