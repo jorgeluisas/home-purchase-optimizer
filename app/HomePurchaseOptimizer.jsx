@@ -2598,7 +2598,7 @@ export default function HomePurchaseOptimizer() {
         {/* Tier Headline Cards */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '24px' }}>
           {tiers.map((tier, idx) => {
-            const opt20 = tier.options.find(o => o.dpPct === 0.20);
+            const bestOpt = tier.options.reduce((best, o) => o.maxPrice > best.maxPrice ? o : best, tier.options[0]);
             const isSelected = affSelectedTier === idx;
             return (
               <div key={idx} onClick={() => setAffSelectedTier(idx)} style={{
@@ -2609,10 +2609,10 @@ export default function HomePurchaseOptimizer() {
               }}>
                 <div style={{ fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '1px', color: tier.color, marginBottom: '8px', fontWeight: '600' }}>{tier.name}</div>
                 <div style={{ fontSize: '0.8rem', color: '#8b8ba7', marginBottom: '12px' }}>{fmtPctWhole(tier.dti * 100)} DTI</div>
-                <div style={{ fontSize: '1.4rem', fontWeight: '700', color: '#fff', marginBottom: '4px' }}>{opt20 ? fmt$(opt20.maxPrice) : '$0'}</div>
-                <div style={{ fontSize: '0.75rem', color: '#8b8ba7' }}>at 20% down</div>
-                {opt20 && opt20.maxPrice > 0 && (
-                  <div style={{ fontSize: '0.8rem', color: '#b0b0c0', marginTop: '8px' }}>{fmt$(opt20.monthlyPITI)}/mo</div>
+                <div style={{ fontSize: '1.4rem', fontWeight: '700', color: '#fff', marginBottom: '4px' }}>{bestOpt ? fmt$(bestOpt.maxPrice) : '$0'}</div>
+                <div style={{ fontSize: '0.75rem', color: '#8b8ba7' }}>at {fmtPctWhole(bestOpt.dpPct * 100)} down</div>
+                {bestOpt && bestOpt.maxPrice > 0 && (
+                  <div style={{ fontSize: '0.8rem', color: '#b0b0c0', marginTop: '8px' }}>{fmt$(bestOpt.monthlyPITI)}/mo</div>
                 )}
               </div>
             );
