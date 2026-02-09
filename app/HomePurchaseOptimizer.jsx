@@ -2612,6 +2612,16 @@ export default function HomePurchaseOptimizer() {
                 ? `50% down minimizes your monthly payment to just ${fmtPctWhole(recommended.takeHomePct * 100)} of take-home.`
                 : `At ${fmtPctWhole(recommended.dpPct * 100)} down, housing is ${fmtPctWhole(recommended.takeHomePct * 100)} of your take-home pay.`}
             </div>
+            {recommended.limitedBy === 'savings' && recommended.maxPriceByIncome > recommended.maxPrice && (
+              <div style={{ fontSize: '0.8rem', color: '#a78bfa', marginBottom: '20px', padding: '10px 16px', background: 'rgba(167,139,250,0.08)', borderRadius: '8px', border: '1px solid rgba(167,139,250,0.2)', maxWidth: '550px', margin: '0 auto 20px' }}>
+                Your income supports up to {fmt$(recommended.maxPriceByIncome)} — but your available cash ({fmt$(totalSavings - minBuffer)}) limits you to {fmt$(recommended.maxPrice)} at {fmtPctWhole(recommended.dpPct * 100)} down. Increase savings or lower your buffer to unlock more.
+              </div>
+            )}
+            {recommended.limitedBy === 'income' && (
+              <div style={{ fontSize: '0.8rem', color: '#fbbf24', marginBottom: '20px', padding: '10px 16px', background: 'rgba(251,191,36,0.08)', borderRadius: '8px', border: '1px solid rgba(251,191,36,0.2)', maxWidth: '550px', margin: '0 auto 20px' }}>
+                Your savings could support a bigger down payment, but monthly costs at this price are near the lender max (43% DTI).
+              </div>
+            )}
             <button onClick={() => { setHomePrice(recommended.maxPrice); setActiveTab('optimize'); }} style={{
               padding: '14px 32px', borderRadius: '10px', border: 'none', cursor: 'pointer', fontSize: '1rem', fontWeight: '600',
               background: 'linear-gradient(135deg, #f97316, #eab308)', color: '#fff',
@@ -2663,7 +2673,10 @@ export default function HomePurchaseOptimizer() {
                 <div style={{ background: 'rgba(0,0,0,0.3)', borderRadius: '4px', height: '6px', marginBottom: '6px', overflow: 'hidden' }}>
                   <div style={{ width: `${barWidth}%`, height: '100%', borderRadius: '4px', background: takeHomeColor(thPct) }} />
                 </div>
-                <div style={{ fontSize: '0.7rem', color: takeHomeColor(thPct) }}>{fmtPctWhole(thPct * 100)} of take-home</div>
+                <div style={{ fontSize: '0.7rem', color: takeHomeColor(thPct), marginBottom: '4px' }}>{fmtPctWhole(thPct * 100)} of take-home</div>
+                {opt.limitedBy === 'savings' && opt.maxPriceByIncome > opt.maxPrice && (
+                  <div style={{ fontSize: '0.6rem', color: '#a78bfa', marginTop: '2px' }}>Income supports {fmt$(opt.maxPriceByIncome)}</div>
+                )}
               </div>
             );
           })}
