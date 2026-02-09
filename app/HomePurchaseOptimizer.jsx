@@ -625,7 +625,7 @@ const runOptimization = (params) => {
 
 // Affordability calculator - closed-form solution (all costs linear in home price)
 // Single 43% DTI ceiling (max lender approval), 4 leverage levels
-const calcAffordability = ({ grossIncome, totalSavings, mortgageRate, loanTerm, minBuffer, monthlyHOA = 0, monthlyOtherDebt = 0, monthlyRent = 0, effectiveTaxRate = 0.45 }) => {
+const calcAffordability = ({ grossIncome, totalSavings, mortgageRate, loanTerm, minBuffer, monthlyHOA = 0, monthlyOtherDebt = 0, monthlyRent = 0, effectiveTaxRate = 0.45, targetTakeHomePct = null }) => {
   const DTI_CEILING = 0.43; // Max most lenders approve
   const DP_OPTIONS = [0.05, 0.10, 0.20, 0.30, 0.50];
   const rate = mortgageRate / 100;
@@ -634,7 +634,10 @@ const calcAffordability = ({ grossIncome, totalSavings, mortgageRate, loanTerm, 
   const insuranceRate = 0.0035;
   const pmiRate = 0.005;
   const monthlyTakeHome = grossIncome * (1 - effectiveTaxRate) / 12;
-  const maxMonthlyHousing = (grossIncome * DTI_CEILING / 12) - monthlyOtherDebt;
+  const dtiMax = (grossIncome * DTI_CEILING / 12) - monthlyOtherDebt;
+  const maxMonthlyHousing = targetTakeHomePct
+    ? Math.min(targetTakeHomePct * monthlyTakeHome, dtiMax)
+    : dtiMax;
 
   const options = DP_OPTIONS.map(dpPct => {
     if (maxMonthlyHousing <= 0 || grossIncome <= 0) return { dpPct, maxPrice: 0, monthlyPITI: 0, cashNeeded: 0, remaining: 0, limitedBy: 'income', takeHomePct: 0, vsRent: 0, bufferMonths: 0, maxPriceByIncome: 0, monthlyBreakdown: { pi: 0, tax: 0, insurance: 0, pmi: 0, hoa: 0 } };
@@ -748,6 +751,7 @@ export default function HomePurchaseOptimizer() {
   const [affMonthlyHOA, setAffMonthlyHOA] = useState(0);
   const [affMonthlyOtherDebt, setAffMonthlyOtherDebt] = useState(0);
   const [affSelectedDpPct, setAffSelectedDpPct] = useState(0.20);
+  const [affTargetComfort, setAffTargetComfort] = useState(null); // null = max, or 0.20/0.30/0.40/0.50/0.75
 
   const [activeTab, setActiveTab] = useState('optimize');
   const [optimizationResult, setOptimizationResult] = useState(null);
@@ -837,7 +841,8 @@ export default function HomePurchaseOptimizer() {
     monthlyOtherDebt: affMonthlyOtherDebt,
     monthlyRent,
     effectiveTaxRate: estEffectiveTaxRate,
-  }), [grossIncome, totalSavings, mortgageRate, loanTerm, minBuffer, affMonthlyHOA, affMonthlyOtherDebt, monthlyRent, estEffectiveTaxRate]);
+    targetTakeHomePct: affTargetComfort,
+  }), [grossIncome, totalSavings, mortgageRate, loanTerm, minBuffer, affMonthlyHOA, affMonthlyOtherDebt, monthlyRent, estEffectiveTaxRate, affTargetComfort]);
 
   const s = {
     container: { fontFamily: "'IBM Plex Sans', -apple-system, sans-serif", background: 'linear-gradient(135deg, #0c1220 0%, #1a1a2e 50%, #16213e 100%)', minHeight: '100vh', color: '#e0e0e0', padding: '24px' },
@@ -1408,6 +1413,17 @@ export default function HomePurchaseOptimizer() {
     const monthlyNetCost = opt.nonRecovBreakdown.netTotal / 12;
     const monthlyVsRent = monthlyNetCost - monthlyRent;
 
+    // Affordability relative to take-home
+    const housingPctOfTakeHome = estimatedTakeHome > 0 ? monthlyNetCost / estimatedTakeHome : 0;
+    const getComfort = (pct) => {
+      if (pct <= 0.20) return { label: 'Excellent', color: '#4ade80', desc: 'Well below guidelines — ample savings room' };
+      if (pct <= 0.30) return { label: 'Comfortable', color: '#60a5fa', desc: 'Within guidelines — solid financial balance' };
+      if (pct <= 0.40) return { label: 'Stretched', color: '#fbbf24', desc: 'Manageable but limits other financial goals' };
+      if (pct <= 0.50) return { label: 'Heavy', color: '#f97316', desc: 'Housing-burdened — most budgets feel tight here' };
+      return { label: 'Unsustainable', color: '#f87171', desc: 'Majority of paycheck to housing — high financial stress' };
+    };
+    const comfort = getComfort(housingPctOfTakeHome);
+
     // Generate verdict
     const getVerdict = () => {
       if (advantage10 > 500000) return { emoji: '🎯', verdict: 'Strong Buy', color: '#22c55e', desc: 'Buying clearly wins financially' };
@@ -1458,6 +1474,41 @@ export default function HomePurchaseOptimizer() {
               <div style={{ fontSize: '1.1rem', fontWeight: '700', color: '#4ade80' }}>
                 {fmt$(opt.totalTaxBenefit)}/yr
               </div>
+            </div>
+          </div>
+        </div>
+
+        {/* AFFORDABILITY INDICATOR */}
+        <div style={{
+          background: `linear-gradient(135deg, ${comfort.color}15, ${comfort.color}08)`,
+          borderRadius: '16px', padding: '20px 24px', border: `2px solid ${comfort.color}40`, marginBottom: '24px',
+          display: 'flex', alignItems: 'center', gap: '20px',
+        }}>
+          <div style={{ flex: '0 0 auto', textAlign: 'center', minWidth: '80px' }}>
+            <div style={{ fontSize: '0.65rem', color: '#8b8ba7', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '4px' }}>Housing Cost</div>
+            <div style={{ fontSize: '2.2rem', fontWeight: '700', color: comfort.color }}>{fmtPctWhole(housingPctOfTakeHome * 100)}</div>
+            <div style={{ fontSize: '0.7rem', color: '#8b8ba7' }}>of take-home</div>
+          </div>
+          <div style={{ flex: '1 1 auto', borderLeft: '1px solid rgba(255,255,255,0.1)', paddingLeft: '20px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+              <div style={{ padding: '4px 12px', borderRadius: '6px', background: `${comfort.color}30`, border: `1px solid ${comfort.color}`, fontSize: '0.85rem', fontWeight: '700', color: comfort.color }}>{comfort.label}</div>
+              <span style={{ fontSize: '0.82rem', color: '#c0c0d0' }}>{comfort.desc}</span>
+            </div>
+            <div style={{ fontSize: '0.78rem', color: '#8b8ba7', lineHeight: '1.6' }}>
+              {fmt$(monthlyNetCost)}/mo housing vs {fmt$(estimatedTakeHome)}/mo take-home.
+              {housingPctOfTakeHome <= 0.30 && ' You have good financial flexibility beyond housing.'}
+              {housingPctOfTakeHome > 0.30 && housingPctOfTakeHome <= 0.50 && ' Consider how this fits with your other financial goals.'}
+              {housingPctOfTakeHome > 0.50 && ' This is a significant portion of your budget.'}
+            </div>
+          </div>
+          <div style={{ flex: '0 0 100px' }}>
+            <div style={{ height: '12px', borderRadius: '6px', background: 'rgba(255,255,255,0.1)', overflow: 'hidden', position: 'relative' }}>
+              <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', width: `${Math.min(100, housingPctOfTakeHome * 100)}%`, borderRadius: '6px', background: comfort.color, transition: 'width 0.3s' }} />
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '4px' }}>
+              <span style={{ fontSize: '0.55rem', color: '#666' }}>0%</span>
+              <span style={{ fontSize: '0.55rem', color: '#666' }}>50%</span>
+              <span style={{ fontSize: '0.55rem', color: '#666' }}>100%</span>
             </div>
           </div>
         </div>
@@ -2638,6 +2689,11 @@ export default function HomePurchaseOptimizer() {
                 Your savings could support a bigger down payment, but monthly costs at this price are near the lender max (43% DTI).
               </div>
             )}
+            {affTargetComfort !== null && (
+              <div style={{ fontSize: '0.8rem', color: '#60a5fa', marginBottom: '20px', padding: '10px 16px', background: 'rgba(96,165,250,0.08)', borderRadius: '8px', border: '1px solid rgba(96,165,250,0.2)', maxWidth: '550px', margin: '0 auto 20px' }}>
+                At your {fmtPctWhole(affTargetComfort * 100)} comfort target. Select "Max" above to see the absolute maximum.
+              </div>
+            )}
             <button onClick={() => { setHomePrice(recommended.maxPrice); setActiveTab('optimize'); }} style={{
               padding: '14px 32px', borderRadius: '10px', border: 'none', cursor: 'pointer', fontSize: '1rem', fontWeight: '600',
               background: 'linear-gradient(135deg, #f97316, #eab308)', color: '#fff',
@@ -2660,10 +2716,47 @@ export default function HomePurchaseOptimizer() {
           </div>
         </div>
 
+        {/* Comfort Target Selector */}
+        <div style={s.card}>
+          <h3 style={{ ...s.section, marginTop: 0 }}>How much of your paycheck for housing?</h3>
+          <p style={{ fontSize: '0.85rem', color: '#8b8ba7', marginBottom: '16px' }}>
+            Pick a comfort level to see what you can afford at that spending target, or select Max to see your absolute ceiling.
+          </p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '10px' }}>
+            {[
+              { value: 0.20, label: '20%', desc: 'Excellent', color: '#4ade80' },
+              { value: 0.30, label: '30%', desc: 'Comfortable', color: '#60a5fa' },
+              { value: 0.40, label: '40%', desc: 'Stretched', color: '#fbbf24' },
+              { value: 0.50, label: '50%', desc: 'Heavy', color: '#f97316' },
+              { value: 0.75, label: '75%', desc: 'Extreme', color: '#f87171' },
+              { value: null, label: 'Max', desc: 'DTI Ceiling', color: '#a78bfa' },
+            ].map((opt, i) => {
+              const isSelected = affTargetComfort === opt.value;
+              return (
+                <div key={i} onClick={() => setAffTargetComfort(opt.value)} style={{
+                  background: isSelected ? `${opt.color}20` : 'rgba(255,255,255,0.03)',
+                  border: isSelected ? `2px solid ${opt.color}` : '1px solid rgba(255,255,255,0.06)',
+                  borderRadius: '10px', padding: '12px 8px', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s',
+                }}>
+                  <div style={{ fontSize: '1.1rem', fontWeight: '700', color: isSelected ? opt.color : '#fff', marginBottom: '2px' }}>{opt.label}</div>
+                  <div style={{ fontSize: '0.65rem', color: isSelected ? opt.color : '#8b8ba7', fontWeight: '600' }}>{opt.desc}</div>
+                </div>
+              );
+            })}
+          </div>
+          {affTargetComfort !== null && (
+            <div style={{ marginTop: '12px', fontSize: '0.8rem', color: '#60a5fa', padding: '10px 16px', background: 'rgba(96,165,250,0.08)', borderRadius: '8px', border: '1px solid rgba(96,165,250,0.2)' }}>
+              Showing homes where housing costs ~{fmtPctWhole(affTargetComfort * 100)} of your take-home ({fmt$(monthlyTakeHome)}/mo). Still capped at lender limits (43% DTI).
+            </div>
+          )}
+        </div>
+
         {/* Section B: The Spectrum */}
-        <h3 style={s.section}>What if you want more or less house?</h3>
+        <h3 style={s.section}>{affTargetComfort !== null ? `Homes at ${fmtPctWhole(affTargetComfort * 100)} of take-home` : 'What if you want more or less house?'}</h3>
         <p style={{ fontSize: '0.85rem', color: '#8b8ba7', marginBottom: '16px', marginTop: '-8px' }}>
-          Less down payment = more house, but higher monthly costs. Click to explore.
+          {affTargetComfort !== null
+            ? `Each card shows the max home price where monthly costs stay at ~${fmtPctWhole(affTargetComfort * 100)} of take-home. Click to explore.`
+            : 'Less down payment = more house, but higher monthly costs. Click to explore.'}
         </p>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '24px' }}>
           {displayOptions.filter(o => o.dpPct !== 0.30).map((opt, i) => {
