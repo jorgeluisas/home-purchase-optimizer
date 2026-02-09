@@ -44,6 +44,13 @@ const calcCAStateTax = (inc, stat) => {
   return tax;
 };
 
+const calcFedTax = (inc, stat) => {
+  const br = stat === 'married' ? [{min:0,max:23200,r:0.10},{min:23200,max:94300,r:0.12},{min:94300,max:201050,r:0.22},{min:201050,max:383900,r:0.24},{min:383900,max:487450,r:0.32},{min:487450,max:731200,r:0.35},{min:731200,max:Infinity,r:0.37}] : [{min:0,max:11600,r:0.10},{min:11600,max:47150,r:0.12},{min:47150,max:100525,r:0.22},{min:100525,max:191950,r:0.24},{min:191950,max:243725,r:0.32},{min:243725,max:609350,r:0.35},{min:609350,max:Infinity,r:0.37}];
+  let tax = 0;
+  for (const b of br) if (inc > b.min) tax += Math.max(0, Math.min(inc, b.max) - b.min) * b.r;
+  return tax;
+};
+
 const getFedRate = (inc, stat) => {
   const br = stat === 'married' ? [{min:0,max:23200,r:0.10},{min:23200,max:94300,r:0.12},{min:94300,max:201050,r:0.22},{min:201050,max:383900,r:0.24},{min:383900,max:487450,r:0.32},{min:487450,max:731200,r:0.35},{min:731200,max:Infinity,r:0.37}] : [{min:0,max:11600,r:0.10},{min:11600,max:47150,r:0.12},{min:47150,max:100525,r:0.22},{min:100525,max:191950,r:0.24},{min:191950,max:243725,r:0.32},{min:243725,max:609350,r:0.35},{min:609350,max:Infinity,r:0.37}];
   for (const b of br) if (inc >= b.min && inc < b.max) return b.r;
@@ -812,10 +819,13 @@ export default function HomePurchaseOptimizer() {
   // Estimate effective tax rate: state tax (actual $) + approximate federal + FICA
   const estEffectiveTaxRate = useMemo(() => {
     if (grossIncome <= 0) return 0;
-    const fica = grossIncome * 0.0145 + Math.max(0, grossIncome - 200000) * 0.009; // Medicare + additional
-    const estFedTax = grossIncome * fedRate * 0.72; // Effective ≈ 72% of marginal for progressive brackets
-    return Math.min(0.55, (stateTax + estFedTax + fica) / grossIncome);
-  }, [grossIncome, stateTax, fedRate]);
+    const fedTax = calcFedTax(grossIncome, filingStatus);
+    const fica = Math.min(grossIncome, 168600) * 0.062 // Social Security
+      + grossIncome * 0.0145                             // Medicare
+      + Math.max(0, grossIncome - 200000) * 0.009;       // Additional Medicare
+    const caSdi = grossIncome * 0.011;                    // CA SDI (no cap since 2024)
+    return Math.min(0.55, (stateTax + fedTax + fica + caSdi) / grossIncome);
+  }, [grossIncome, filingStatus, stateTax]);
 
   const affordability = useMemo(() => calcAffordability({
     grossIncome,
@@ -972,10 +982,8 @@ export default function HomePurchaseOptimizer() {
 
   // Calculate estimated monthly take-home
   const estimatedTakeHome = useMemo(() => {
-    // Estimate: gross income * (1 - ~40% for high CA earners) / 12
-    const effectiveTaxRate = combRate * 0.7; // Rough approximation considering progressive brackets
-    return Math.round((grossIncome * (1 - effectiveTaxRate)) / 12);
-  }, [grossIncome, combRate]);
+    return Math.round(grossIncome * (1 - estEffectiveTaxRate) / 12);
+  }, [grossIncome, estEffectiveTaxRate]);
 
   // Feature 1: Total Wealth Impact Summary
   const renderWealthImpactSummary = (opt) => {
@@ -2201,6 +2209,7 @@ export default function HomePurchaseOptimizer() {
   };
 
   // Tax breakdown calculations for Tax tab
+  // Display-only bracket data for the Taxes tab table. Actual tax computation uses calcFedTax / calcCAStateTax.
   const taxBreakdown = useMemo(() => {
     const fedTaxBrackets = filingStatus === 'married'
       ? [{min:0,max:23200,r:0.10},{min:23200,max:94300,r:0.12},{min:94300,max:201050,r:0.22},{min:201050,max:383900,r:0.24},{min:383900,max:487450,r:0.32},{min:487450,max:731200,r:0.35},{min:731200,max:Infinity,r:0.37}]
@@ -2573,7 +2582,14 @@ export default function HomePurchaseOptimizer() {
       || displayOptions.find(o => o.remaining >= 0 && o.maxPrice > 0);
 
     const selected = displayOptions.find(o => o.dpPct === affSelectedDpPct) || displayOptions[0];
-    const takeHomeColor = (pct) => pct <= 0.25 ? '#4ade80' : pct <= 0.40 ? '#fbbf24' : '#f87171';
+    const comfortLevel = (pct) => {
+      if (pct <= 0.20) return { label: 'Excellent', color: '#4ade80', desc: 'Well below 30% rule — ample room for savings' };
+      if (pct <= 0.30) return { label: 'Comfortable', color: '#60a5fa', desc: 'Within guidelines — solid financial balance' };
+      if (pct <= 0.40) return { label: 'Stretched', color: '#fbbf24', desc: 'Manageable but limits other financial goals' };
+      if (pct <= 0.50) return { label: 'Heavy', color: '#f97316', desc: 'Housing-burdened — most budgets feel tight here' };
+      return { label: 'Unsustainable', color: '#f87171', desc: 'Majority of paycheck to housing — high financial stress' };
+    };
+    const takeHomeColor = (pct) => comfortLevel(pct).color;
 
     return (
       <>
@@ -2673,7 +2689,8 @@ export default function HomePurchaseOptimizer() {
                 <div style={{ background: 'rgba(0,0,0,0.3)', borderRadius: '4px', height: '6px', marginBottom: '6px', overflow: 'hidden' }}>
                   <div style={{ width: `${barWidth}%`, height: '100%', borderRadius: '4px', background: takeHomeColor(thPct) }} />
                 </div>
-                <div style={{ fontSize: '0.7rem', color: takeHomeColor(thPct), marginBottom: '4px' }}>{fmtPctWhole(thPct * 100)} of take-home</div>
+                <div style={{ fontSize: '0.7rem', color: takeHomeColor(thPct), marginBottom: '2px' }}>{fmtPctWhole(thPct * 100)} of take-home</div>
+                <div style={{ fontSize: '0.6rem', color: comfortLevel(thPct).color, fontWeight: '600' }}>{comfortLevel(thPct).label}</div>
                 {opt.limitedBy === 'savings' && opt.maxPriceByIncome > opt.maxPrice && (
                   <div style={{ fontSize: '0.6rem', color: '#a78bfa', marginTop: '2px' }}>Income supports {fmt$(opt.maxPriceByIncome)}</div>
                 )}
@@ -2760,6 +2777,48 @@ export default function HomePurchaseOptimizer() {
                     {fmtPctWhole(selected.takeHomePct * 100)}
                   </span>
                 </div>
+                {/* Housing Comfort Gauge */}
+                {(() => {
+                  const cl = comfortLevel(selected.takeHomePct);
+                  const pctClamped = Math.min(1, Math.max(0, selected.takeHomePct));
+                  const tiers = [
+                    { label: 'Excellent', end: 0.20, color: '#4ade80' },
+                    { label: 'Comfortable', end: 0.30, color: '#60a5fa' },
+                    { label: 'Stretched', end: 0.40, color: '#fbbf24' },
+                    { label: 'Heavy', end: 0.50, color: '#f97316' },
+                    { label: 'Unsustainable', end: 1.0, color: '#f87171' },
+                  ];
+                  return (
+                    <div style={{ marginTop: '12px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                        <span style={{ fontSize: '0.75rem', color: '#8b8ba7', textTransform: 'uppercase', letterSpacing: '1px' }}>Housing Comfort Level</span>
+                        <span style={{ fontSize: '0.85rem', fontWeight: '700', color: cl.color }}>{cl.label}</span>
+                      </div>
+                      {/* Gauge bar */}
+                      <div style={{ position: 'relative', height: '12px', borderRadius: '6px', overflow: 'hidden', display: 'flex' }}>
+                        {tiers.map((t, i) => {
+                          const prev = i === 0 ? 0 : tiers[i - 1].end;
+                          return <div key={i} style={{ flex: `${(t.end - prev) * 100}`, background: t.color, opacity: 0.25 }} />;
+                        })}
+                        <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', width: `${pctClamped * 100}%`, borderRadius: '6px', background: cl.color, transition: 'width 0.3s' }} />
+                      </div>
+                      {/* Scale labels */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '4px' }}>
+                        {['0%', '25%', '50%', '75%', '100%'].map((l, i) => (
+                          <span key={i} style={{ fontSize: '0.6rem', color: '#666' }}>{l}</span>
+                        ))}
+                      </div>
+                      {/* Tier labels */}
+                      <div style={{ display: 'flex', marginTop: '2px' }}>
+                        {tiers.map((t, i) => {
+                          const prev = i === 0 ? 0 : tiers[i - 1].end;
+                          return <span key={i} style={{ flex: `${(t.end - prev) * 100}`, fontSize: '0.55rem', color: t.color, textAlign: 'center', opacity: 0.7 }}>{t.label}</span>;
+                        })}
+                      </div>
+                      <div style={{ fontSize: '0.75rem', color: cl.color, marginTop: '6px', fontStyle: 'italic' }}>{cl.desc}</div>
+                    </div>
+                  );
+                })()}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ fontSize: '0.85rem', color: '#8b8ba7' }}>
                     {selected.limitedBy === 'savings'
