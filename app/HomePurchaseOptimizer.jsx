@@ -1,7 +1,37 @@
 'use client';
 
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area, ComposedChart } from 'recharts';
+
+// URL param mapping (short keys for cleaner URLs)
+const URL_PARAM_MAP = {
+  homePrice: 'hp',
+  totalSavings: 'ts',
+  stockPortfolio: 'sp',
+  grossIncome: 'gi',
+  monthlyRent: 'mr',
+  rentGrowth: 'rg',
+  filingStatus: 'fs',
+  mortgageRate: 'mrt',
+  marginRate: 'mgr',
+  helocRate: 'hr',
+  cashOutRefiRate: 'cor',
+  investmentReturn: 'ir',
+  dividendYield: 'dy',
+  homeAppreciation: 'ha',
+  loanTerm: 'lt',
+  minBuffer: 'mb',
+  manualDpPct: 'mdp',
+  manualMarginPct: 'mmp',
+  manualHelocPct: 'mhp',
+  activeTab: 'tab',
+};
+
+// Reverse mapping for hydration
+const REVERSE_URL_MAP = Object.fromEntries(
+  Object.entries(URL_PARAM_MAP).map(([k, v]) => [v, k])
+);
 
 // Info Box Component
 const InfoBox = ({ title, children, recommendation, isOpen, onToggle }) => (
@@ -756,12 +786,130 @@ export default function HomePurchaseOptimizer() {
   const [activeTab, setActiveTab] = useState('optimize');
   const [optimizationResult, setOptimizationResult] = useState(null);
   const [openInfoBoxes, setOpenInfoBoxes] = useState({});
+  const [showOptimizeDetails, setShowOptimizeDetails] = useState(false);
 
   // Scenario comparison state
   const [scenarios, setScenarios] = useState([
     { id: 1, name: 'Scenario A', dpPct: 20, mortgageRate: 6.5, marginPct: 0, helocPct: 0 },
     { id: 2, name: 'Scenario B', dpPct: 30, mortgageRate: 6.5, marginPct: 15, helocPct: 0 },
   ]);
+
+  // URL state persistence
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const hasHydrated = useRef(false);
+  const [linkCopied, setLinkCopied] = useState(false);
+
+  // State setters map for hydration
+  const stateSetters = useMemo(() => ({
+    homePrice: setHomePrice,
+    totalSavings: setTotalSavings,
+    stockPortfolio: setStockPortfolio,
+    grossIncome: setGrossIncome,
+    monthlyRent: setMonthlyRent,
+    rentGrowth: setRentGrowth,
+    filingStatus: setFilingStatus,
+    mortgageRate: setMortgageRate,
+    marginRate: setMarginRate,
+    helocRate: setHelocRate,
+    cashOutRefiRate: setCashOutRefiRate,
+    investmentReturn: setInvestmentReturn,
+    dividendYield: setDividendYield,
+    homeAppreciation: setHomeAppreciation,
+    loanTerm: setLoanTerm,
+    minBuffer: setMinBuffer,
+    manualDpPct: setManualDpPct,
+    manualMarginPct: setManualMarginPct,
+    manualHelocPct: setManualHelocPct,
+    activeTab: setActiveTab,
+  }), []);
+
+  // Hydrate state from URL on mount
+  useEffect(() => {
+    if (hasHydrated.current) return;
+    hasHydrated.current = true;
+
+    const params = new URLSearchParams(window.location.search);
+    if (params.size === 0) return;
+
+    params.forEach((value, shortKey) => {
+      const stateKey = REVERSE_URL_MAP[shortKey];
+      if (!stateKey || !stateSetters[stateKey]) return;
+
+      if (stateKey === 'filingStatus' || stateKey === 'activeTab') {
+        stateSetters[stateKey](value);
+      } else {
+        const num = parseFloat(value);
+        if (!isNaN(num)) stateSetters[stateKey](num);
+      }
+    });
+  }, [searchParams, stateSetters]);
+
+  // Current state values for URL sync
+  const currentState = useMemo(() => ({
+    homePrice, totalSavings, stockPortfolio, grossIncome, monthlyRent, rentGrowth,
+    filingStatus, mortgageRate, marginRate, helocRate, cashOutRefiRate,
+    investmentReturn, dividendYield, homeAppreciation, loanTerm, minBuffer,
+    manualDpPct, manualMarginPct, manualHelocPct, activeTab
+  }), [homePrice, totalSavings, stockPortfolio, grossIncome, monthlyRent, rentGrowth,
+      filingStatus, mortgageRate, marginRate, helocRate, cashOutRefiRate,
+      investmentReturn, dividendYield, homeAppreciation, loanTerm, minBuffer,
+      manualDpPct, manualMarginPct, manualHelocPct, activeTab]);
+
+  // Default values for comparison (only include non-default in URL)
+  const defaults = useMemo(() => ({
+    homePrice: 2000000, totalSavings: 1000000, stockPortfolio: 1500000,
+    grossIncome: 1500000, monthlyRent: 8000, rentGrowth: 3,
+    filingStatus: 'married', mortgageRate: 6.5, marginRate: 6.5,
+    helocRate: 8.5, cashOutRefiRate: 6.75, investmentReturn: 8,
+    dividendYield: 2, homeAppreciation: 5, loanTerm: 30, minBuffer: 300000,
+    manualDpPct: 30, manualMarginPct: 0, manualHelocPct: 0, activeTab: 'optimize'
+  }), []);
+
+  // Update URL when state changes (debounced)
+  useEffect(() => {
+    if (!hasHydrated.current) return;
+
+    const timeoutId = setTimeout(() => {
+      const params = new URLSearchParams();
+      
+      Object.entries(currentState).forEach(([key, value]) => {
+        const shortKey = URL_PARAM_MAP[key];
+        if (shortKey && value !== defaults[key]) {
+          params.set(shortKey, String(value));
+        }
+      });
+
+      const newUrl = params.size > 0 
+        ? `${window.location.pathname}?${params.toString()}`
+        : window.location.pathname;
+      
+      window.history.replaceState({}, '', newUrl);
+    }, 500); // 500ms debounce
+
+    return () => clearTimeout(timeoutId);
+  }, [currentState, defaults]);
+
+  // Copy shareable link
+  const copyShareLink = useCallback(() => {
+    const params = new URLSearchParams();
+    
+    Object.entries(currentState).forEach(([key, value]) => {
+      const shortKey = URL_PARAM_MAP[key];
+      if (shortKey && value !== defaults[key]) {
+        params.set(shortKey, String(value));
+      }
+    });
+
+    const shareUrl = params.size > 0
+      ? `${window.location.origin}${window.location.pathname}?${params.toString()}`
+      : `${window.location.origin}${window.location.pathname}`;
+
+    navigator.clipboard.writeText(shareUrl).then(() => {
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 2000);
+    });
+  }, [currentState, defaults]);
 
   
   const toggleInfo = (id) => setOpenInfoBoxes(p => ({ ...p, [id]: !p[id] }));
@@ -1520,6 +1668,36 @@ export default function HomePurchaseOptimizer() {
           </div>
         )}
 
+        {/* Show/Hide Details Toggle */}
+        <button
+          onClick={() => setShowOptimizeDetails(!showOptimizeDetails)}
+          style={{
+            width: '100%',
+            padding: '16px 24px',
+            marginBottom: '24px',
+            background: showOptimizeDetails ? 'rgba(139,92,246,0.2)' : 'linear-gradient(135deg, rgba(139,92,246,0.3), rgba(168,85,247,0.2))',
+            border: '2px solid rgba(139,92,246,0.5)',
+            borderRadius: '12px',
+            color: '#a78bfa',
+            fontSize: '1rem',
+            fontWeight: '600',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '10px',
+            transition: 'all 0.2s ease',
+          }}
+        >
+          {showOptimizeDetails ? '📊 Hide Full Analysis' : '📊 Show Full Analysis'}
+          <span style={{ fontSize: '0.8rem', color: '#8b8ba7' }}>
+            {showOptimizeDetails ? '▲' : '▼'} Strategy details, action plan, wealth projections
+          </span>
+        </button>
+
+        {/* Detailed Analysis Section - Collapsed by Default */}
+        {showOptimizeDetails && (
+        <>
         {/* Recommendation Summary Box */}
         <div style={{ background: 'linear-gradient(135deg, rgba(34,197,94,0.15), rgba(16,185,129,0.1))', borderRadius: '20px', padding: '28px', border: '2px solid rgba(34,197,94,0.4)', marginBottom: '24px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px' }}>
@@ -1737,6 +1915,8 @@ export default function HomePurchaseOptimizer() {
               <span style={{ fontSize: '1.2rem', fontWeight: '600', color: '#a78bfa' }}>{fmt$(optimizationResult.additionalNeeded)}</span>
             </div>
           </div>
+        )}
+        </>
         )}
       </>
     );
@@ -2979,7 +3159,22 @@ export default function HomePurchaseOptimizer() {
       <header style={s.header}>
         <h1 style={s.title}>Home Purchase Optimizer</h1>
         <p style={{ color: '#8b8ba7', fontSize: '1rem' }}>AI-powered strategy optimization for SF homebuyers</p>
-        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'rgba(249,115,22,0.15)', border: '1px solid rgba(249,115,22,0.3)', borderRadius: '20px', padding: '6px 14px', fontSize: '0.8rem', color: '#fb923c', marginTop: '12px' }}>🌉 San Francisco Edition</div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', marginTop: '12px', flexWrap: 'wrap' }}>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'rgba(249,115,22,0.15)', border: '1px solid rgba(249,115,22,0.3)', borderRadius: '20px', padding: '6px 14px', fontSize: '0.8rem', color: '#fb923c' }}>🌉 San Francisco Edition</div>
+          <button 
+            onClick={copyShareLink}
+            style={{ 
+              display: 'inline-flex', alignItems: 'center', gap: '6px',
+              background: linkCopied ? 'rgba(74,222,128,0.15)' : 'rgba(99,102,241,0.15)', 
+              border: linkCopied ? '1px solid rgba(74,222,128,0.3)' : '1px solid rgba(99,102,241,0.3)', 
+              borderRadius: '20px', padding: '6px 14px', fontSize: '0.8rem', 
+              color: linkCopied ? '#4ade80' : '#818cf8',
+              cursor: 'pointer', transition: 'all 0.2s'
+            }}
+          >
+            {linkCopied ? '✓ Copied!' : '🔗 Copy Link'}
+          </button>
+        </div>
       </header>
       
       <div style={s.grid}>
