@@ -2108,6 +2108,30 @@ export default function HomePurchaseOptimizer() {
           </div>
         </div>
 
+        {/* Cross-tab navigation */}
+        {isExpertMode ? (
+          <div style={{ display: 'flex', justifyContent: 'center', gap: '24px', marginBottom: '24px', flexWrap: 'wrap' }}>
+            <button onClick={() => setActiveTab('holding')} style={{ background: 'none', border: 'none', color: '#60a5fa', cursor: 'pointer', fontSize: '0.82rem', padding: 0 }}>
+              See year-by-year breakdown →
+            </button>
+            <button onClick={() => setActiveTab('sensitivity')} style={{ background: 'none', border: 'none', color: '#a78bfa', cursor: 'pointer', fontSize: '0.82rem', padding: 0 }}>
+              Test sensitivity to assumptions →
+            </button>
+            <button onClick={() => setActiveTab('tax')} style={{ background: 'none', border: 'none', color: '#fbbf24', cursor: 'pointer', fontSize: '0.82rem', padding: 0 }}>
+              View tax details →
+            </button>
+          </div>
+        ) : (
+          <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+            <button
+              onClick={() => setIsExpertMode(true)}
+              style={{ background: 'none', border: 'none', color: '#a78bfa', cursor: 'pointer', fontSize: '0.82rem', padding: 0 }}
+            >
+              Switch to Expert Mode for year-by-year analysis, sensitivity testing, and tax breakdown →
+            </button>
+          </div>
+        )}
+
         {/* Diagnostics - why certain strategies may not appear */}
         {diag && !optimizationResult.canBuyCash && (
           <div style={s.warning}>
@@ -2989,9 +3013,24 @@ export default function HomePurchaseOptimizer() {
             >
               Compare Other Scenarios →
             </button>
+            <button
+              onClick={() => setActiveTab('optimize')}
+              style={{
+                padding: '10px 20px',
+                borderRadius: '8px',
+                border: '1px solid rgba(255,255,255,0.15)',
+                background: 'rgba(255,255,255,0.05)',
+                color: '#8b8ba7',
+                cursor: 'pointer',
+                fontSize: '0.9rem',
+                fontWeight: '500',
+              }}
+            >
+              ← Back to Strategy
+            </button>
           </div>
         </div>
-        
+
         {/* Sensitivity Analysis Panel */}
         {showSensitivity && (
           <div style={{ background: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.3)', borderRadius: '16px', padding: '20px', marginBottom: '24px' }}>
