@@ -787,6 +787,9 @@ export default function HomePurchaseOptimizer() {
   const [optimizationResult, setOptimizationResult] = useState(null);
   const [openInfoBoxes, setOpenInfoBoxes] = useState({});
   const [showOptimizeDetails, setShowOptimizeDetails] = useState(false);
+  
+  // CTA-related state
+  const [showSensitivity, setShowSensitivity] = useState(false);
 
   // Scenario comparison state
   const [scenarios, setScenarios] = useState([
@@ -930,6 +933,21 @@ export default function HomePurchaseOptimizer() {
     setOptimizationResult(result);
     setActiveTab('optimize');
   }, [homePrice, totalSavings, stockPortfolio, mortgageRate, loanTerm, homeAppreciation, investmentReturn, monthlyRent, rentGrowth, marginRate, helocRate, fedRate, caRate, stateTax, stdDeduction, minBuffer, grossIncome, filingStatus]);
+
+  // Apply a scenario to Manual tab settings and navigate there
+  const applyScenarioToManual = useCallback((scenario) => {
+    if (!scenario) return;
+    
+    // Calculate percentages from absolute values
+    const dpPct = scenario.homePrice > 0 ? Math.round((scenario.totalDown / scenario.homePrice) * 100) : 20;
+    const marginPct = stockPortfolio > 0 ? Math.round((scenario.marginLoan / stockPortfolio) * 100) : 0;
+    const helocPct = scenario.homePrice > 0 ? Math.round((scenario.helocAmount / scenario.homePrice) * 100) : 0;
+    
+    setManualDpPct(Math.min(100, Math.max(10, dpPct)));
+    setManualMarginPct(Math.min(30, Math.max(0, marginPct)));
+    setManualHelocPct(Math.min(80, Math.max(0, helocPct)));
+    setActiveTab('manual');
+  }, [stockPortfolio]);
 
   // Manual scenario calculation
   const manualScenario = useMemo(() => {
@@ -1624,6 +1642,29 @@ export default function HomePurchaseOptimizer() {
               </div>
             </div>
           </div>
+          
+          {/* CTA: Use This Strategy */}
+          <button 
+            onClick={() => applyScenarioToManual(opt)}
+            style={{
+              marginTop: '20px',
+              padding: '14px 28px',
+              borderRadius: '10px',
+              border: 'none',
+              cursor: 'pointer',
+              fontSize: '1rem',
+              fontWeight: '600',
+              background: 'linear-gradient(135deg, #22c55e, #16a34a)',
+              color: '#fff',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px',
+              transition: 'transform 0.2s, box-shadow 0.2s',
+            }}
+          >
+            ✨ Use This Strategy → Customize in Manual Tab
+          </button>
         </div>
 
         {/* AFFORDABILITY INDICATOR */}
@@ -2054,6 +2095,72 @@ export default function HomePurchaseOptimizer() {
             </div>
           </div>
         </div>
+        
+        {/* CTA: Optimize & Compare */}
+        <div style={{
+          background: 'linear-gradient(135deg, rgba(59,130,246,0.15), rgba(139,92,246,0.1))',
+          borderRadius: '16px',
+          padding: '24px',
+          border: '2px solid rgba(59,130,246,0.4)',
+          textAlign: 'center',
+        }}>
+          <div style={{ fontSize: '1rem', color: '#c0c0d0', marginBottom: '16px' }}>
+            Happy with this setup? Run the optimizer to see how it compares to other strategies.
+          </div>
+          <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flexWrap: 'wrap' }}>
+            <button
+              onClick={() => {
+                handleOptimize();
+                setActiveTab('scenarios');
+              }}
+              style={{
+                padding: '14px 28px',
+                borderRadius: '10px',
+                border: 'none',
+                cursor: 'pointer',
+                fontSize: '1rem',
+                fontWeight: '600',
+                background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
+                color: '#fff',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+              }}
+            >
+              🚀 Optimize & Compare Strategies
+            </button>
+            <button
+              onClick={() => {
+                // Add current manual scenario to comparison scenarios
+                const newScenario = {
+                  id: Math.max(...scenarios.map(s => s.id), 0) + 1,
+                  name: 'My Custom',
+                  dpPct: manualDpPct,
+                  mortgageRate: mortgageRate,
+                  marginPct: manualMarginPct,
+                  helocPct: manualHelocPct,
+                };
+                setScenarios(prev => [...prev.filter(s => s.name !== 'My Custom'), newScenario]);
+                setActiveTab('scenarios');
+              }}
+              style={{
+                padding: '14px 28px',
+                borderRadius: '10px',
+                border: '1px solid rgba(59,130,246,0.4)',
+                cursor: 'pointer',
+                fontSize: '1rem',
+                fontWeight: '600',
+                background: 'rgba(59,130,246,0.1)',
+                color: '#60a5fa',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+              }}
+            >
+              📊 Add to Compare Tab
+            </button>
+          </div>
+        </div>
       </>
     );
   };
@@ -2063,9 +2170,116 @@ export default function HomePurchaseOptimizer() {
     if (!opt) return <div style={{ textAlign: 'center', padding: '40px', color: '#8b8ba7' }}>Run optimization first</div>;
 
     const sens = opt.breakEvenSensitivity || {};
+    
+    // Determine verdict
+    const buyWins = opt.breakEvenYear !== 'Never' && opt.breakEvenYear <= 10;
+    const year10Data = opt.yearlyAnalysis?.[9];
+    const advantage10 = year10Data ? year10Data.ownerWealth - year10Data.renterWealth : 0;
+    
+    const getHoldingVerdict = () => {
+      if (opt.breakEvenYear === 'Never') {
+        return { emoji: '🏃', verdict: 'Renting Wins Long-Term', color: '#f87171', desc: 'Based on current assumptions, renting + investing beats buying over 30 years.' };
+      }
+      if (opt.breakEvenYear <= 3) {
+        return { emoji: '🏠', verdict: `Buying Wins Fast (Year ${opt.breakEvenYear})`, color: '#22c55e', desc: 'Quick break-even — buying is clearly favorable if you stay.' };
+      }
+      if (opt.breakEvenYear <= 7) {
+        return { emoji: '✅', verdict: `Buying Wins at Year ${opt.breakEvenYear}`, color: '#4ade80', desc: 'Reasonable break-even horizon for a home purchase.' };
+      }
+      if (opt.breakEvenYear <= 15) {
+        return { emoji: '⚖️', verdict: `Break-Even at Year ${opt.breakEvenYear}`, color: '#fbbf24', desc: 'Longer horizon — make sure you plan to stay.' };
+      }
+      return { emoji: '🤔', verdict: `Long Break-Even (Year ${opt.breakEvenYear})`, color: '#fb923c', desc: 'You need to stay a long time for buying to make sense financially.' };
+    };
+    
+    const holdingVerdict = getHoldingVerdict();
 
     return (
       <>
+        {/* Verdict Banner */}
+        <div style={{
+          background: `linear-gradient(135deg, ${holdingVerdict.color}20, ${holdingVerdict.color}10)`,
+          borderRadius: '20px',
+          padding: '24px',
+          border: `2px solid ${holdingVerdict.color}60`,
+          marginBottom: '24px',
+          textAlign: 'center',
+        }}>
+          <div style={{ fontSize: '3rem', marginBottom: '8px' }}>{holdingVerdict.emoji}</div>
+          <div style={{ fontSize: '1.8rem', fontWeight: '700', color: holdingVerdict.color, marginBottom: '8px' }}>{holdingVerdict.verdict}</div>
+          <div style={{ fontSize: '1rem', color: '#c0c0d0', marginBottom: '16px', maxWidth: '500px', margin: '0 auto' }}>{holdingVerdict.desc}</div>
+          
+          <div style={{ display: 'flex', justifyContent: 'center', gap: '12px', marginTop: '16px', flexWrap: 'wrap' }}>
+            <button
+              onClick={() => setShowSensitivity(!showSensitivity)}
+              style={{
+                padding: '10px 20px',
+                borderRadius: '8px',
+                border: `1px solid ${showSensitivity ? '#a78bfa' : 'rgba(255,255,255,0.2)'}`,
+                background: showSensitivity ? 'rgba(167,139,250,0.2)' : 'rgba(255,255,255,0.05)',
+                color: showSensitivity ? '#a78bfa' : '#8b8ba7',
+                cursor: 'pointer',
+                fontSize: '0.9rem',
+                fontWeight: '500',
+                transition: 'all 0.2s',
+              }}
+            >
+              {showSensitivity ? '📊 Hide Sensitivity' : '📊 See Sensitivity Analysis'}
+            </button>
+            <button
+              onClick={() => setActiveTab('scenarios')}
+              style={{
+                padding: '10px 20px',
+                borderRadius: '8px',
+                border: 'none',
+                background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
+                color: '#fff',
+                cursor: 'pointer',
+                fontSize: '0.9rem',
+                fontWeight: '600',
+              }}
+            >
+              Compare Other Scenarios →
+            </button>
+          </div>
+        </div>
+        
+        {/* Sensitivity Analysis Panel */}
+        {showSensitivity && (
+          <div style={{ background: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.3)', borderRadius: '16px', padding: '20px', marginBottom: '24px' }}>
+            <h4 style={{ color: '#a78bfa', margin: '0 0 16px 0', fontSize: '1rem' }}>📊 What Would Change the Outcome?</h4>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px' }}>
+              <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '10px', padding: '16px' }}>
+                <div style={{ fontSize: '0.75rem', color: '#8b8ba7', marginBottom: '8px' }}>If Home Appreciation Were Higher</div>
+                <div style={{ fontSize: '1rem', color: '#fff' }}>
+                  At {(homeAppreciation + 2).toFixed(0)}% instead of {homeAppreciation}%, break-even comes ~{Math.max(1, Math.floor((opt.breakEvenYear === 'Never' ? 30 : opt.breakEvenYear) * 0.7))} years sooner
+                </div>
+              </div>
+              <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '10px', padding: '16px' }}>
+                <div style={{ fontSize: '0.75rem', color: '#8b8ba7', marginBottom: '8px' }}>If Rent Were Higher</div>
+                <div style={{ fontSize: '1rem', color: '#fff' }}>
+                  At {fmt$(monthlyRent * 1.25)}/mo (+25%), owning becomes more attractive
+                </div>
+              </div>
+              <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '10px', padding: '16px' }}>
+                <div style={{ fontSize: '0.75rem', color: '#8b8ba7', marginBottom: '8px' }}>If Investment Returns Were Lower</div>
+                <div style={{ fontSize: '1rem', color: '#fff' }}>
+                  At {(investmentReturn - 2).toFixed(0)}% instead of {investmentReturn}%, renting looks less appealing
+                </div>
+              </div>
+              <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '10px', padding: '16px' }}>
+                <div style={{ fontSize: '0.75rem', color: '#8b8ba7', marginBottom: '8px' }}>If You Got a Better Rate</div>
+                <div style={{ fontSize: '1rem', color: '#fff' }}>
+                  At {(mortgageRate - 1).toFixed(1)}% instead of {mortgageRate}%, monthly costs drop ~{fmt$((homePrice * 0.8 * 0.01) / 12)}/mo
+                </div>
+              </div>
+            </div>
+            <p style={{ fontSize: '0.8rem', color: '#8b8ba7', marginTop: '12px', marginBottom: 0, fontStyle: 'italic' }}>
+              Try adjusting these inputs in the sidebar to see exact impacts.
+            </p>
+          </div>
+        )}
+        
         <InfoBox title="How the Comparison Works" isOpen={openInfoBoxes['holdingExplain']} onToggle={() => toggleInfo('holdingExplain')}>
           <p><strong>Owner scenario:</strong> Buys home, pays mortgage/costs from income, builds equity through appreciation + principal paydown. Wealth = home equity minus selling costs if sold.</p>
           <p style={{marginTop: '10px'}}><strong>Renter scenario:</strong> Invests the down payment + closing costs that owner spent. Portfolio compounds at {investmentReturn}% annually{sens.subjectToNIIT ? ` (reduced by 3.8% NIIT)` : ''}. If renting is cheaper than owning, the savings also get invested.</p>
@@ -2249,9 +2463,71 @@ export default function HomePurchaseOptimizer() {
 
   const renderScenarios = () => {
     const colors = ['#f97316', '#3b82f6', '#22c55e', '#a855f7', '#ec4899'];
+    
+    // Find the winning scenario based on 20-year advantage
+    const winner = scenarioResults.length > 0 
+      ? scenarioResults.reduce((best, sc) => {
+          const scAdvantage = sc.ownerWealth20 - sc.renterWealth20;
+          const bestAdvantage = best.ownerWealth20 - best.renterWealth20;
+          return scAdvantage > bestAdvantage ? sc : best;
+        })
+      : null;
+    const winnerIdx = winner ? scenarioResults.findIndex(s => s.id === winner.id) : -1;
+    const winnerAdvantage = winner ? winner.ownerWealth20 - winner.renterWealth20 : 0;
 
     return (
       <>
+        {/* Winner Banner */}
+        {winner && scenarioResults.length > 1 && (
+          <div style={{
+            background: `linear-gradient(135deg, ${colors[winnerIdx % colors.length]}20, ${colors[winnerIdx % colors.length]}10)`,
+            borderRadius: '16px',
+            padding: '20px 24px',
+            border: `2px solid ${colors[winnerIdx % colors.length]}`,
+            marginBottom: '24px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: '16px',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+              <div style={{ fontSize: '2.5rem' }}>🏆</div>
+              <div>
+                <div style={{ fontSize: '0.75rem', color: '#8b8ba7', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '4px' }}>Best Scenario</div>
+                <div style={{ fontSize: '1.5rem', fontWeight: '700', color: colors[winnerIdx % colors.length] }}>{winner.name}</div>
+                <div style={{ fontSize: '0.9rem', color: '#c0c0d0', marginTop: '4px' }}>
+                  {fmtPctWhole(winner.dpPct)} down · {fmt$(winner.monthlyPayment)}/mo · {fmtPct(winner.blendedEffectiveRate)} effective rate
+                </div>
+              </div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: '0.75rem', color: '#8b8ba7', marginBottom: '4px' }}>20-Year Advantage</div>
+                <div style={{ fontSize: '1.3rem', fontWeight: '700', color: winnerAdvantage >= 0 ? '#4ade80' : '#f87171' }}>
+                  {winnerAdvantage >= 0 ? '+' : ''}{fmt$(winnerAdvantage)}
+                </div>
+              </div>
+              <button
+                onClick={() => applyScenarioToManual(winner)}
+                style={{
+                  padding: '12px 24px',
+                  borderRadius: '10px',
+                  border: 'none',
+                  cursor: 'pointer',
+                  fontSize: '0.95rem',
+                  fontWeight: '600',
+                  background: `linear-gradient(135deg, ${colors[winnerIdx % colors.length]}, ${colors[winnerIdx % colors.length]}cc)`,
+                  color: '#fff',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                Use This →
+              </button>
+            </div>
+          </div>
+        )}
+        
         <InfoBox title="Scenario Comparison" isOpen={openInfoBoxes['scenarioInfo']} onToggle={() => toggleInfo('scenarioInfo')}>
           <p>Create and compare different financing scenarios side-by-side. Adjust rates, down payment, and leverage to see how they affect your costs and long-term wealth.</p>
         </InfoBox>
@@ -2739,6 +3015,46 @@ export default function HomePurchaseOptimizer() {
 
           <div style={{ marginTop: '16px', fontSize: '0.85rem', color: '#8b8ba7', textAlign: 'center' }}>
             Compared to renting (taking standard deduction) • {fmt$(tb.totalTaxSavings / 12)}/month effective savings
+          </div>
+          
+          {/* CTA: Factor Into Budget */}
+          <div style={{ marginTop: '20px', display: 'flex', gap: '12px', justifyContent: 'center', flexWrap: 'wrap' }}>
+            <button
+              onClick={() => setActiveTab('optimize')}
+              style={{
+                padding: '12px 24px',
+                borderRadius: '10px',
+                border: 'none',
+                cursor: 'pointer',
+                fontSize: '0.95rem',
+                fontWeight: '600',
+                background: 'linear-gradient(135deg, #4ade80, #22c55e)',
+                color: '#fff',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+              }}
+            >
+              💵 See Full Cost Analysis
+            </button>
+            <button
+              onClick={() => setActiveTab('afford')}
+              style={{
+                padding: '12px 24px',
+                borderRadius: '10px',
+                border: '1px solid rgba(74,222,128,0.4)',
+                cursor: 'pointer',
+                fontSize: '0.95rem',
+                fontWeight: '600',
+                background: 'rgba(74,222,128,0.1)',
+                color: '#4ade80',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+              }}
+            >
+              📊 Factor Into Affordability
+            </button>
           </div>
         </div>
 
