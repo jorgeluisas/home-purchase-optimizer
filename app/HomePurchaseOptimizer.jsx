@@ -2011,31 +2011,35 @@ export default function HomePurchaseOptimizer() {
               <div style={{ fontSize: '1rem', fontWeight: '700', color: advantage10 >= 0 ? '#4ade80' : '#f87171' }}>
                 {advantage10 >= 0 ? '+' : ''}{fmt$(advantage10)}
               </div>
+              <div style={{ fontSize: '0.55rem', color: '#666', marginTop: '3px' }}>Wealth gap: buying vs renting</div>
             </div>
             <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '10px', padding: '12px' }}>
               <div style={{ fontSize: '0.65rem', color: '#8b8ba7', marginBottom: '4px' }}>Monthly vs Rent</div>
               <div style={{ fontSize: '1rem', fontWeight: '700', color: monthlyVsRent <= 0 ? '#4ade80' : '#f87171' }}>
                 {monthlyVsRent > 0 ? '+' : ''}{fmt$(monthlyVsRent)}
               </div>
+              <div style={{ fontSize: '0.55rem', color: '#666', marginTop: '3px' }}>{monthlyVsRent > 0 ? 'More' : 'Less'} than current rent</div>
             </div>
             <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '10px', padding: '12px' }}>
               <div style={{ fontSize: '0.65rem', color: '#8b8ba7', marginBottom: '4px' }}>Break-Even</div>
               <div style={{ fontSize: '1rem', fontWeight: '700', color: '#fff' }}>
                 {opt.breakEvenYear === 'Never' ? 'Never' : `Year ${opt.breakEvenYear}`}
               </div>
+              <div style={{ fontSize: '0.55rem', color: '#666', marginTop: '3px' }}>When buying beats renting</div>
             </div>
             <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '10px', padding: '12px' }}>
               <div style={{ fontSize: '0.65rem', color: '#8b8ba7', marginBottom: '4px' }}>Tax Savings</div>
               <div style={{ fontSize: '1rem', fontWeight: '700', color: '#4ade80' }}>
                 {fmt$(opt.totalTaxBenefit)}/yr
               </div>
+              <div style={{ fontSize: '0.55rem', color: '#666', marginTop: '3px' }}>From mortgage deductions</div>
             </div>
             <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '10px', padding: '12px' }}>
               <div style={{ fontSize: '0.65rem', color: '#8b8ba7', marginBottom: '4px' }}>Opportunity Cost</div>
               <div style={{ fontSize: '1rem', fontWeight: '700', color: '#fb923c' }}>
                 {fmt$(annualOpportunityCost)}/yr
               </div>
-              <div style={{ fontSize: '0.6rem', color: '#666', marginTop: '2px' }}>{fmt$(opt.totalDown)} at {investmentReturn}%</div>
+              <div style={{ fontSize: '0.55rem', color: '#666', marginTop: '3px' }}>{fmt$(opt.totalDown)} if invested</div>
             </div>
           </div>
           
