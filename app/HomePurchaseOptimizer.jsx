@@ -4330,16 +4330,35 @@ export default function HomePurchaseOptimizer() {
 
     const selected = displayOptions.find(o => o.dpPct === affSelectedDpPct) || displayOptions[0];
     const comfortLevel = (pct) => {
-      if (pct <= 0.20) return { label: 'Excellent', color: '#4ade80', desc: 'Well below 30% rule — ample room for savings' };
-      if (pct <= 0.30) return { label: 'Comfortable', color: '#60a5fa', desc: 'Within guidelines — solid financial balance' };
-      if (pct <= 0.40) return { label: 'Stretched', color: '#fbbf24', desc: 'Manageable but limits other financial goals' };
-      if (pct <= 0.50) return { label: 'Heavy', color: '#f97316', desc: 'Housing-burdened — most budgets feel tight here' };
-      return { label: 'Unsustainable', color: '#f87171', desc: 'Majority of paycheck to housing — high financial stress' };
+      if (pct <= 0.20) return { label: 'Excellent', color: '#4ade80', desc: 'Under 20% of take-home — plenty left for retirement savings, investments, and lifestyle' };
+      if (pct <= 0.30) return { label: 'Comfortable', color: '#60a5fa', desc: 'The classic "30% rule" adjusted for after-tax income — sustainable long-term' };
+      if (pct <= 0.40) return { label: 'Stretched', color: '#fbbf24', desc: 'Workable for high earners, but you\'ll need discipline on other spending' };
+      if (pct <= 0.50) return { label: 'Heavy', color: '#f97316', desc: 'HUD considers this "housing-burdened" — expect trade-offs on savings and lifestyle' };
+      return { label: 'Unsustainable', color: '#f87171', desc: 'Over half your paycheck goes to housing — very high financial stress risk' };
     };
     const takeHomeColor = (pct) => comfortLevel(pct).color;
 
     return (
       <>
+        {/* Educational Intro */}
+        <div style={{ ...s.card, background: 'linear-gradient(135deg, rgba(96,165,250,0.08), rgba(59,130,246,0.04))', border: '1px solid rgba(96,165,250,0.2)', marginBottom: '24px' }}>
+          <h3 style={{ ...s.section, marginTop: 0, color: '#60a5fa' }}>How Home Affordability Works</h3>
+          <div style={{ fontSize: '0.88rem', color: '#c0c0d0', lineHeight: '1.8' }}>
+            <p style={{ marginBottom: '12px' }}>When you apply for a mortgage, lenders check two things:</p>
+            <div style={{ display: 'grid', gap: '10px', marginBottom: '12px' }}>
+              <div style={{ padding: '12px 16px', background: 'rgba(0,0,0,0.2)', borderRadius: '8px', display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                <span style={{ fontSize: '1.2rem' }}>1</span>
+                <div><strong style={{ color: '#fbbf24' }}>Debt-to-Income (DTI) Ratio</strong> — Your monthly housing costs (mortgage + taxes + insurance) can't exceed ~43% of your gross monthly income. This is the main limit on how much house your <em>income</em> supports.</div>
+              </div>
+              <div style={{ padding: '12px 16px', background: 'rgba(0,0,0,0.2)', borderRadius: '8px', display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                <span style={{ fontSize: '1.2rem' }}>2</span>
+                <div><strong style={{ color: '#a78bfa' }}>Down Payment + Closing Costs</strong> — You need enough cash for the down payment (3-50% of home price) plus ~3-4% in closing costs. This is the limit on how much house your <em>savings</em> supports.</div>
+              </div>
+            </div>
+            <p style={{ fontSize: '0.82rem', color: '#8b8ba7' }}>Below, we calculate the maximum home price limited by whichever constraint binds first — income or savings. The comfort level shows how that payment compares to your actual take-home pay (after taxes).</p>
+          </div>
+        </div>
+
         {/* Section A: The Answer */}
         {recommended && recommended.maxPrice > 0 && (
           <div style={{ ...s.planCard, textAlign: 'center', marginBottom: '24px' }}>
@@ -4415,8 +4434,11 @@ export default function HomePurchaseOptimizer() {
         {/* Comfort Target Selector */}
         <div style={s.card}>
           <h3 style={{ ...s.section, marginTop: 0 }}>How much of your paycheck for housing?</h3>
+          <p style={{ fontSize: '0.85rem', color: '#8b8ba7', marginBottom: '8px' }}>
+            Financial advisors use the "30% rule" — spend no more than 30% of gross income on housing. But for high earners in California paying ~45% effective tax, 30% of gross is actually ~55% of take-home.
+          </p>
           <p style={{ fontSize: '0.85rem', color: '#8b8ba7', marginBottom: '16px' }}>
-            Pick a comfort level to see what you can afford at that spending target, or select Max to see your absolute ceiling.
+            These targets use your <strong style={{ color: '#fff' }}>after-tax take-home</strong> instead — a more honest picture. Pick a comfort level, or select Max to see the absolute ceiling lenders would approve.
           </p>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '10px' }}>
             {[
