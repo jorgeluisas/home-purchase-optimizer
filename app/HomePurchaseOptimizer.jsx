@@ -872,6 +872,102 @@ const NumberInput = ({ value, onChange, min = 0, max = Infinity, step = 1, style
   );
 };
 
+// Scenario Presets
+const SCENARIO_PRESETS = {
+  conservative: {
+    name: 'Conservative',
+    emoji: '🛡️',
+    description: 'Lower leverage, higher safety margins, traditional financing',
+    color: '#4ade80',
+    settings: {
+      manualDpPct: 30,
+      manualMarginPct: 0,
+      manualHelocPct: 0,
+      mortgageRate: 7.0,    // Assume slightly higher rate
+      marginRate: 7.0,
+      helocRate: 9.0,
+      investmentReturn: 6,  // Conservative returns
+      homeAppreciation: 3,  // Conservative appreciation
+      rentGrowth: 3,
+    }
+  },
+  balanced: {
+    name: 'Balanced',
+    emoji: '⚖️',
+    description: 'Moderate leverage, realistic assumptions, some optimization',
+    color: '#60a5fa',
+    settings: {
+      manualDpPct: 25,
+      manualMarginPct: 10,
+      manualHelocPct: 0,
+      mortgageRate: 6.5,
+      marginRate: 6.5,
+      helocRate: 8.5,
+      investmentReturn: 8,
+      homeAppreciation: 5,
+      rentGrowth: 3,
+    }
+  },
+  aggressive: {
+    name: 'Aggressive',
+    emoji: '🚀',
+    description: 'Maximum tax optimization, higher leverage, all tools utilized',
+    color: '#f97316',
+    settings: {
+      manualDpPct: 20,
+      manualMarginPct: 20,
+      manualHelocPct: 50,   // Only applies if buying with cash
+      mortgageRate: 6.5,
+      marginRate: 6.0,      // Assume better rates
+      helocRate: 8.0,
+      investmentReturn: 10, // Optimistic returns
+      homeAppreciation: 6,  // Optimistic appreciation
+      rentGrowth: 4,
+    }
+  }
+};
+
+// Preset Selector Component
+const PresetSelector = ({ onSelect, activePreset }) => {
+  return (
+    <div style={{ marginBottom: '16px' }}>
+      <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '1.5px', color: '#8b8ba7', marginBottom: '10px', fontWeight: '600' }}>
+        Quick Start Presets
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
+        {Object.entries(SCENARIO_PRESETS).map(([key, preset]) => (
+          <button
+            key={key}
+            onClick={() => onSelect(key)}
+            style={{
+              padding: '12px 8px',
+              borderRadius: '10px',
+              border: activePreset === key ? `2px solid ${preset.color}` : '1px solid rgba(255,255,255,0.1)',
+              background: activePreset === key ? `${preset.color}20` : 'rgba(255,255,255,0.03)',
+              cursor: 'pointer',
+              transition: 'all 0.2s',
+              textAlign: 'center',
+            }}
+          >
+            <div style={{ fontSize: '1.3rem', marginBottom: '4px' }}>{preset.emoji}</div>
+            <div style={{ 
+              fontSize: '0.8rem', 
+              fontWeight: '600', 
+              color: activePreset === key ? preset.color : '#d0d0e0',
+              marginBottom: '2px' 
+            }}>
+              {preset.name}
+            </div>
+            <div style={{ fontSize: '0.65rem', color: '#8b8ba7', lineHeight: '1.3' }}>
+              {preset.description.split(',')[0]}
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+};
+
 // Main Component
 export default function HomePurchaseOptimizer() {
   const [homePrice, setHomePrice] = useState(2000000);
@@ -909,6 +1005,38 @@ export default function HomePurchaseOptimizer() {
   
   // CTA-related state
   const [showSensitivity, setShowSensitivity] = useState(false);
+
+  // Preset state
+  const [activePreset, setActivePreset] = useState(null);
+
+  // Apply preset function
+  const applyPreset = useCallback((presetKey) => {
+    const preset = SCENARIO_PRESETS[presetKey];
+    if (!preset) return;
+    
+    const { settings } = preset;
+    
+    // Apply manual mode settings
+    if (settings.manualDpPct !== undefined) setManualDpPct(settings.manualDpPct);
+    if (settings.manualMarginPct !== undefined) setManualMarginPct(settings.manualMarginPct);
+    if (settings.manualHelocPct !== undefined) setManualHelocPct(settings.manualHelocPct);
+    
+    // Apply rate settings
+    if (settings.mortgageRate !== undefined) setMortgageRate(settings.mortgageRate);
+    if (settings.marginRate !== undefined) setMarginRate(settings.marginRate);
+    if (settings.helocRate !== undefined) setHelocRate(settings.helocRate);
+    
+    // Apply assumption settings
+    if (settings.investmentReturn !== undefined) setInvestmentReturn(settings.investmentReturn);
+    if (settings.homeAppreciation !== undefined) setHomeAppreciation(settings.homeAppreciation);
+    if (settings.rentGrowth !== undefined) setRentGrowth(settings.rentGrowth);
+    
+    // Track the active preset
+    setActivePreset(presetKey);
+    
+    // Navigate to Build Your Own tab to show the settings
+    setActiveTab('manual');
+  }, []);
 
   // Scenario comparison state
   const [scenarios, setScenarios] = useState([
@@ -2111,8 +2239,35 @@ export default function HomePurchaseOptimizer() {
     
     return (
       <>
-        <InfoBox title="Manual Mode" isOpen={openInfoBoxes['manual']} onToggle={() => toggleInfo('manual')}>
-          <p>Use sliders to test any combination. HELOC requires buying outright (set down payment to 100% or ensure cash + margin ≥ home price).</p>
+        {/* Scenario Presets */}
+        <div style={s.card}>
+          <PresetSelector onSelect={applyPreset} activePreset={activePreset} />
+          
+          {activePreset && (
+            <div style={{
+              marginTop: '12px',
+              padding: '12px 14px',
+              borderRadius: '8px',
+              background: `${SCENARIO_PRESETS[activePreset].color}15`,
+              border: `1px solid ${SCENARIO_PRESETS[activePreset].color}40`,
+              fontSize: '0.85rem',
+              color: '#d0d0e0'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                <span>{SCENARIO_PRESETS[activePreset].emoji}</span>
+                <span style={{ fontWeight: '600', color: SCENARIO_PRESETS[activePreset].color }}>
+                  {SCENARIO_PRESETS[activePreset].name} Preset Applied
+                </span>
+              </div>
+              <div style={{ fontSize: '0.8rem', color: '#8b8ba7' }}>
+                {SCENARIO_PRESETS[activePreset].description}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <InfoBox title="Build Your Own Strategy" isOpen={openInfoBoxes['manual']} onToggle={() => toggleInfo('manual')}>
+          <p>Use sliders to test any combination. Start with a preset above, then customize as needed. HELOC requires buying outright (set down payment to 100% or ensure cash + margin ≥ home price).</p>
         </InfoBox>
 
         {/* Educational Info Boxes */}
@@ -2161,18 +2316,18 @@ export default function HomePurchaseOptimizer() {
           
           <div style={s.inputGroup}>
             <label style={s.label}>Down Payment: {manualDpPct}% ({fmt$(homePrice * manualDpPct / 100)})</label>
-            <input type="range" min="10" max="100" value={manualDpPct} onChange={e => setManualDpPct(Number(e.target.value))} style={s.slider} />
+            <input type="range" min="10" max="100" value={manualDpPct} onChange={e => { setManualDpPct(Number(e.target.value)); setActivePreset(null); }} style={s.slider} />
           </div>
           
           <div style={s.inputGroup}>
             <label style={s.label}>Margin Loan: {manualMarginPct}% of portfolio ({fmt$(stockPortfolio * manualMarginPct / 100)})</label>
-            <input type="range" min="0" max="30" value={manualMarginPct} onChange={e => setManualMarginPct(Number(e.target.value))} style={s.slider} />
+            <input type="range" min="0" max="30" value={manualMarginPct} onChange={e => { setManualMarginPct(Number(e.target.value)); setActivePreset(null); }} style={s.slider} />
             {manualMarginPct > 25 && <div style={{ color: '#fbbf24', fontSize: '0.8rem', marginTop: '4px' }}>⚠️ High margin ({'>'}25%) increases margin call risk</div>}
           </div>
           
           <div style={s.inputGroup}>
             <label style={s.label}>HELOC: {manualHelocPct}% of home ({fmt$(homePrice * manualHelocPct / 100)})</label>
-            <input type="range" min="0" max="80" value={manualHelocPct} onChange={e => setManualHelocPct(Number(e.target.value))} style={s.slider} disabled={!canManualHELOC} />
+            <input type="range" min="0" max="80" value={manualHelocPct} onChange={e => { setManualHelocPct(Number(e.target.value)); setActivePreset(null); }} style={s.slider} disabled={!canManualHELOC} />
             {!canManualHELOC && manualHelocPct === 0 && (
               <div style={{ color: '#8b8ba7', fontSize: '0.8rem', marginTop: '4px' }}>
                 HELOC requires cash + margin ≥ home price. Currently: {fmt$(manualScenario.cashDown + (stockPortfolio * manualMarginPct / 100))} vs {fmt$(homePrice)} needed
