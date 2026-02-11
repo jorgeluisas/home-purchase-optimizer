@@ -998,7 +998,7 @@ export default function HomePurchaseOptimizer() {
   const [affSelectedDpPct, setAffSelectedDpPct] = useState(0.20);
   const [affTargetComfort, setAffTargetComfort] = useState(null); // null = max, or 0.20/0.30/0.40/0.50/0.75
 
-  const [activeTab, setActiveTab] = useState('optimize');
+  const [activeTab, setActiveTab] = useState('afford');
   const [optimizationResult, setOptimizationResult] = useState(null);
   const [openInfoBoxes, setOpenInfoBoxes] = useState({});
   const [showOptimizeDetails, setShowOptimizeDetails] = useState(false);
@@ -1010,7 +1010,8 @@ export default function HomePurchaseOptimizer() {
   const [activePreset, setActivePreset] = useState(null);
 
   // Expert/Quick Mode state
-  const [isExpertMode, setIsExpertMode] = useState(true);
+  const [isExpertMode, setIsExpertMode] = useState(false);
+  const [showAdvancedInputs, setShowAdvancedInputs] = useState(false);
 
   // Custom assumptions state (editable SF constants)
   const [customAssumptions, setCustomAssumptions] = useState({
@@ -4665,6 +4666,21 @@ export default function HomePurchaseOptimizer() {
             </p>
           </div>
         </div>
+
+        {/* Bridge CTA: Affordability → Best Strategy */}
+        {recommended && recommended.maxPrice > 0 && (
+          <div style={{ ...s.card, background: 'linear-gradient(135deg, rgba(34,197,94,0.12), rgba(16,185,129,0.08))', border: '2px solid rgba(34,197,94,0.3)', textAlign: 'center' }}>
+            <div style={{ fontSize: '0.75rem', color: '#8b8ba7', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>Next Step</div>
+            <div style={{ fontSize: '1.1rem', color: '#fff', marginBottom: '12px', lineHeight: '1.6' }}>
+              Now that you know your range, find the <strong style={{ color: '#4ade80' }}>best down payment and financing strategy</strong> for your situation.
+            </div>
+            <button onClick={() => { if (recommended) setHomePrice(recommended.maxPrice); handleOptimize(); setActiveTab('optimize'); }} style={{
+              padding: '14px 32px', borderRadius: '10px', border: 'none', cursor: 'pointer', fontSize: '1rem', fontWeight: '600',
+              background: 'linear-gradient(135deg, #22c55e, #16a34a)', color: '#fff',
+            }}>Find Best Strategy for {fmt$(recommended.maxPrice)}</button>
+            <div style={{ fontSize: '0.75rem', color: '#8b8ba7', marginTop: '8px' }}>Tests hundreds of combinations to find your optimal approach</div>
+          </div>
+        )}
       </>
     );
   };
@@ -4701,7 +4717,7 @@ export default function HomePurchaseOptimizer() {
             border: '1px solid rgba(255,255,255,0.1)'
           }}>
             <button
-              onClick={() => { setIsExpertMode(false); setActiveTab('optimize'); }}
+              onClick={() => { setIsExpertMode(false); setActiveTab('afford'); }}
               style={{
                 padding: '6px 14px',
                 borderRadius: '18px',
@@ -4764,18 +4780,6 @@ export default function HomePurchaseOptimizer() {
             />
           </div>
           <div style={s.inputGroup}>
-            <label style={s.label}>Stock Portfolio</label>
-            <CurrencyInput 
-              style={s.input} 
-              value={stockPortfolio} 
-              onChange={setStockPortfolio} 
-              min={0} 
-              max={50000000}
-              error={validationErrors.stockPortfolio}
-              onValidate={(valid, err) => setFieldError('stockPortfolio', err)}
-            />
-          </div>
-          <div style={s.inputGroup}>
             <label style={s.label}>Gross Income</label>
             <CurrencyInput 
               style={s.input} 
@@ -4800,44 +4804,72 @@ export default function HomePurchaseOptimizer() {
             />
           </div>
           <div style={s.inputGroup}>
-            <label style={s.label}>Min. Buffer</label>
-            <CurrencyInput 
-              style={s.input} 
-              value={minBuffer} 
-              onChange={setMinBuffer} 
-              min={0} 
-              max={10000000}
-              error={validationErrors.minBuffer}
-              onValidate={(valid, err) => setFieldError('minBuffer', err)}
-            />
-          </div>
-          <div style={s.inputGroup}>
             <label style={s.label}>Filing Status</label>
             <select style={s.select} value={filingStatus} onChange={e => setFilingStatus(e.target.value)}>
               <option value="married">Married Filing Jointly</option>
               <option value="single">Single / Head of Household</option>
             </select>
           </div>
-
-          <div style={s.auto}>
-            <div style={{ fontSize: '0.7rem', color: '#fb923c', textTransform: 'uppercase' }}>Combined Rate</div>
-            <div style={{ fontSize: '1rem', color: '#fff', fontWeight: '600' }}>{fmtPct(combRate)}</div>
-          </div>
-          
-          <h3 style={s.section}>Rates</h3>
           <div style={s.inputGroup}>
-            <label style={s.label}>Mortgage (%)</label>
-            <NumberInput 
-              style={s.input} 
-              value={mortgageRate} 
-              onChange={setMortgageRate} 
-              min={0.1} 
-              max={20} 
+            <label style={s.label}>Mortgage Rate (%)</label>
+            <NumberInput
+              style={s.input}
+              value={mortgageRate}
+              onChange={setMortgageRate}
+              min={0.1}
+              max={20}
               step={0.125}
               error={validationErrors.mortgageRate}
               onValidate={(valid, err) => setFieldError('mortgageRate', err)}
             />
           </div>
+
+          {/* Advanced Settings Toggle */}
+          <button
+            onClick={() => setShowAdvancedInputs(!showAdvancedInputs)}
+            style={{
+              width: '100%', padding: '10px', marginTop: '8px', marginBottom: '4px',
+              background: showAdvancedInputs ? 'rgba(167,139,250,0.1)' : 'rgba(255,255,255,0.03)',
+              border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px',
+              color: '#a78bfa', fontSize: '0.8rem', fontWeight: '500', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            }}>
+            <span>{showAdvancedInputs ? '▼' : '▶'} Advanced Settings</span>
+            <span style={{ fontSize: '0.7rem', color: '#8b8ba7' }}>Buffer, rates, returns</span>
+          </button>
+
+          {showAdvancedInputs && (<>
+          <div style={s.inputGroup}>
+            <label style={s.label}>Min. Buffer</label>
+            <CurrencyInput
+              style={s.input}
+              value={minBuffer}
+              onChange={setMinBuffer}
+              min={0}
+              max={10000000}
+              error={validationErrors.minBuffer}
+              onValidate={(valid, err) => setFieldError('minBuffer', err)}
+            />
+          </div>
+          <div style={s.inputGroup}>
+            <label style={s.label}>Stock Portfolio</label>
+            <CurrencyInput
+              style={s.input}
+              value={stockPortfolio}
+              onChange={setStockPortfolio}
+              min={0}
+              max={50000000}
+              error={validationErrors.stockPortfolio}
+              onValidate={(valid, err) => setFieldError('stockPortfolio', err)}
+            />
+          </div>
+
+          <div style={s.auto}>
+            <div style={{ fontSize: '0.7rem', color: '#fb923c', textTransform: 'uppercase' }}>Combined Rate</div>
+            <div style={{ fontSize: '1rem', color: '#fff', fontWeight: '600' }}>{fmtPct(combRate)}</div>
+          </div>
+
+          <h3 style={s.section}>Rates & Returns</h3>
           <div style={s.inputGroup}>
             <label style={s.label}>Margin (%)</label>
             <NumberInput 
@@ -4930,13 +4962,14 @@ export default function HomePurchaseOptimizer() {
               onValidate={(valid, err) => setFieldError('rentGrowth', err)}
             />
           </div>
+          </>)}
 
-          <button 
+          <button
             style={{
               ...s.btn,
               opacity: isFormValid ? 1 : 0.5,
               cursor: isFormValid ? 'pointer' : 'not-allowed'
-            }} 
+            }}
             onClick={handleOptimize}
             disabled={!isFormValid}
           >
@@ -4978,7 +5011,7 @@ export default function HomePurchaseOptimizer() {
                 <span style={{ fontSize: '1.5rem' }}>🎯</span>
                 <div>
                   <div style={{ color: '#22c55e', fontWeight: '600', fontSize: '0.95rem' }}>Quick Mode</div>
-                  <div style={{ color: '#a0a0b0', fontSize: '0.8rem' }}>Simplified view — just the verdict. Switch to Expert for full analysis.</div>
+                  <div style={{ color: '#a0a0b0', fontSize: '0.8rem' }}>Start with what you can afford, then get your best strategy. Switch to Expert for deep analysis.</div>
                 </div>
               </div>
               <button
@@ -5001,6 +5034,7 @@ export default function HomePurchaseOptimizer() {
           )}
 
           <div style={s.tabs}>
+            <button style={{ ...s.tab, ...(activeTab === 'afford' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('afford')}>What Can I Buy?</button>
             <button style={{ ...s.tab, ...(activeTab === 'optimize' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('optimize')}>Best Strategy</button>
             {isExpertMode && (
               <>
@@ -5011,7 +5045,6 @@ export default function HomePurchaseOptimizer() {
                 <button style={{ ...s.tab, ...(activeTab === 'manual' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('manual')}>Build Your Own</button>
               </>
             )}
-            <button style={{ ...s.tab, ...(activeTab === 'afford' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('afford')}>What Can I Buy?</button>
           </div>
 
           {activeTab === 'optimize' && renderOptimize()}
