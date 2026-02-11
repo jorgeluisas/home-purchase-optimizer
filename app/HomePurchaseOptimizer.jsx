@@ -2739,7 +2739,7 @@ export default function HomePurchaseOptimizer() {
                     value={customAssumptions.pmiRate}
                     onChange={e => setCustomAssumptions(prev => ({ ...prev, pmiRate: parseFloat(e.target.value) || 0 }))}
                   />
-                  <div style={{ fontSize: '0.65rem', color: '#8b8ba7', marginTop: '2px' }}>Default: 0.5% (if LTV > 80%)</div>
+                  <div style={{ fontSize: '0.65rem', color: '#8b8ba7', marginTop: '2px' }}>Default: 0.5% (if LTV &gt; 80%)</div>
                 </div>
               </div>
 
