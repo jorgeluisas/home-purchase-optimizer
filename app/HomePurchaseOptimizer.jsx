@@ -718,38 +718,157 @@ const fmtPct = (v) => `${((v || 0) * 100).toFixed(2)}%`;
 const fmtPctWhole = (v) => `${(v || 0).toFixed(0)}%`;
 const fmtNum = (v) => new Intl.NumberFormat('en-US').format(v || 0);
 
-// Input component with formatting
-const CurrencyInput = ({ value, onChange, label, min = 0, max = Infinity, style }) => {
+// Input component with formatting and validation
+const CurrencyInput = ({ value, onChange, label, min = 0, max = Infinity, style, error, onValidate }) => {
   const [focused, setFocused] = React.useState(false);
   const [tempValue, setTempValue] = React.useState('');
+  const [localError, setLocalError] = React.useState('');
 
   const handleFocus = () => {
     setFocused(true);
     setTempValue(value.toString());
+    setLocalError('');
   };
 
   const handleBlur = () => {
     setFocused(false);
-    const parsed = parseInt(tempValue.replace(/[^0-9.-]/g, ''), 10);
-    if (!isNaN(parsed)) {
-      const clamped = Math.max(min, Math.min(max, parsed));
-      onChange(clamped);
+    const cleanedValue = tempValue.replace(/[^0-9.-]/g, '');
+    const parsed = parseInt(cleanedValue, 10);
+    
+    if (cleanedValue === '' || isNaN(parsed)) {
+      setLocalError('Please enter a valid number');
+      if (onValidate) onValidate(false, 'Please enter a valid number');
+      return;
     }
+    
+    if (parsed < min) {
+      setLocalError(`Value cannot be less than ${fmtNum(min)}`);
+      if (onValidate) onValidate(false, `Value cannot be less than ${fmtNum(min)}`);
+      onChange(min); // Clamp to min
+      return;
+    }
+    
+    if (parsed > max) {
+      setLocalError(`Value cannot exceed ${fmtNum(max)}`);
+      if (onValidate) onValidate(false, `Value cannot exceed ${fmtNum(max)}`);
+      onChange(max); // Clamp to max
+      return;
+    }
+    
+    setLocalError('');
+    if (onValidate) onValidate(true, '');
+    onChange(parsed);
   };
 
   const handleChange = (e) => {
     setTempValue(e.target.value);
+    // Clear error while typing
+    if (localError) setLocalError('');
   };
 
+  const displayError = error || localError;
+  const hasError = !!displayError;
+
   return (
-    <input
-      type="text"
-      style={style}
-      value={focused ? tempValue : '$' + fmtNum(value)}
-      onChange={handleChange}
-      onFocus={handleFocus}
-      onBlur={handleBlur}
-    />
+    <div style={{ position: 'relative' }}>
+      <input
+        type="text"
+        style={{
+          ...style,
+          borderColor: hasError ? '#f87171' : style?.borderColor || 'rgba(255,255,255,0.1)',
+          boxShadow: hasError ? '0 0 0 2px rgba(248,113,113,0.2)' : 'none'
+        }}
+        value={focused ? tempValue : '$' + fmtNum(value)}
+        onChange={handleChange}
+        onFocus={handleFocus}
+        onBlur={handleBlur}
+      />
+      {hasError && (
+        <div style={{ 
+          color: '#f87171', 
+          fontSize: '0.75rem', 
+          marginTop: '4px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '4px'
+        }}>
+          <span>⚠</span> {displayError}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Number input component with validation (for rates/percentages)
+const NumberInput = ({ value, onChange, min = 0, max = Infinity, step = 1, style, error, onValidate }) => {
+  const [localError, setLocalError] = React.useState('');
+
+  const handleChange = (e) => {
+    const newValue = e.target.value;
+    
+    if (newValue === '') {
+      onChange(0);
+      return;
+    }
+    
+    const parsed = parseFloat(newValue);
+    
+    if (isNaN(parsed)) {
+      setLocalError('Please enter a valid number');
+      if (onValidate) onValidate(false, 'Please enter a valid number');
+      return;
+    }
+    
+    if (parsed < min) {
+      setLocalError(`Value cannot be less than ${min}`);
+      if (onValidate) onValidate(false, `Value cannot be less than ${min}`);
+      onChange(min);
+      return;
+    }
+    
+    if (parsed > max) {
+      setLocalError(`Value cannot exceed ${max}`);
+      if (onValidate) onValidate(false, `Value cannot exceed ${max}`);
+      onChange(max);
+      return;
+    }
+    
+    setLocalError('');
+    if (onValidate) onValidate(true, '');
+    onChange(parsed);
+  };
+
+  const displayError = error || localError;
+  const hasError = !!displayError;
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <input
+        type="number"
+        step={step}
+        style={{
+          ...style,
+          borderColor: hasError ? '#f87171' : style?.borderColor || 'rgba(255,255,255,0.1)',
+          boxShadow: hasError ? '0 0 0 2px rgba(248,113,113,0.2)' : 'none'
+        }}
+        value={value}
+        onChange={handleChange}
+        min={min}
+        max={max}
+      />
+      {hasError && (
+        <div style={{ 
+          color: '#f87171', 
+          fontSize: '0.75rem', 
+          marginTop: '4px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '4px'
+        }}>
+          <span>⚠</span> {displayError}
+        </div>
+      )}
+    </div>
   );
 };
 
@@ -796,6 +915,30 @@ export default function HomePurchaseOptimizer() {
     { id: 1, name: 'Scenario A', dpPct: 20, mortgageRate: 6.5, marginPct: 0, helocPct: 0 },
     { id: 2, name: 'Scenario B', dpPct: 30, mortgageRate: 6.5, marginPct: 15, helocPct: 0 },
   ]);
+
+  // Input validation state
+  const [validationErrors, setValidationErrors] = useState({});
+  
+  // Check if form is valid (no errors and all required fields have positive values where needed)
+  const isFormValid = useMemo(() => {
+    const hasErrors = Object.values(validationErrors).some(err => !!err);
+    if (hasErrors) return false;
+    
+    // Check that critical values are positive
+    if (homePrice <= 0) return false;
+    if (grossIncome <= 0) return false;
+    if (mortgageRate <= 0 || mortgageRate > 20) return false;
+    
+    return true;
+  }, [validationErrors, homePrice, grossIncome, mortgageRate]);
+
+  // Validation helper
+  const setFieldError = useCallback((field, error) => {
+    setValidationErrors(prev => ({
+      ...prev,
+      [field]: error
+    }));
+  }, []);
 
   // URL state persistence
   const searchParams = useSearchParams();
@@ -3496,12 +3639,78 @@ export default function HomePurchaseOptimizer() {
       <div style={s.grid}>
         <aside style={s.panel}>
           <h3 style={{ ...s.section, marginTop: 0 }}>Your Situation</h3>
-          <div style={s.inputGroup}><label style={s.label}>Target Home Price</label><CurrencyInput style={s.input} value={homePrice} onChange={setHomePrice} min={100000} max={50000000} /></div>
-          <div style={s.inputGroup}><label style={s.label}>Total Cash Savings</label><CurrencyInput style={s.input} value={totalSavings} onChange={setTotalSavings} min={0} max={50000000} /></div>
-          <div style={s.inputGroup}><label style={s.label}>Stock Portfolio</label><CurrencyInput style={s.input} value={stockPortfolio} onChange={setStockPortfolio} min={0} max={50000000} /></div>
-          <div style={s.inputGroup}><label style={s.label}>Gross Income</label><CurrencyInput style={s.input} value={grossIncome} onChange={setGrossIncome} min={0} max={50000000} /></div>
-          <div style={s.inputGroup}><label style={s.label}>Monthly Rent</label><CurrencyInput style={s.input} value={monthlyRent} onChange={setMonthlyRent} min={0} max={100000} /></div>
-          <div style={s.inputGroup}><label style={s.label}>Min. Buffer</label><CurrencyInput style={s.input} value={minBuffer} onChange={setMinBuffer} min={0} max={10000000} /></div>
+          <div style={s.inputGroup}>
+            <label style={s.label}>Target Home Price</label>
+            <CurrencyInput 
+              style={s.input} 
+              value={homePrice} 
+              onChange={setHomePrice} 
+              min={100000} 
+              max={50000000}
+              error={validationErrors.homePrice}
+              onValidate={(valid, err) => setFieldError('homePrice', err)}
+            />
+          </div>
+          <div style={s.inputGroup}>
+            <label style={s.label}>Total Cash Savings</label>
+            <CurrencyInput 
+              style={s.input} 
+              value={totalSavings} 
+              onChange={setTotalSavings} 
+              min={0} 
+              max={50000000}
+              error={validationErrors.totalSavings}
+              onValidate={(valid, err) => setFieldError('totalSavings', err)}
+            />
+          </div>
+          <div style={s.inputGroup}>
+            <label style={s.label}>Stock Portfolio</label>
+            <CurrencyInput 
+              style={s.input} 
+              value={stockPortfolio} 
+              onChange={setStockPortfolio} 
+              min={0} 
+              max={50000000}
+              error={validationErrors.stockPortfolio}
+              onValidate={(valid, err) => setFieldError('stockPortfolio', err)}
+            />
+          </div>
+          <div style={s.inputGroup}>
+            <label style={s.label}>Gross Income</label>
+            <CurrencyInput 
+              style={s.input} 
+              value={grossIncome} 
+              onChange={setGrossIncome} 
+              min={1} 
+              max={50000000}
+              error={validationErrors.grossIncome}
+              onValidate={(valid, err) => setFieldError('grossIncome', err)}
+            />
+          </div>
+          <div style={s.inputGroup}>
+            <label style={s.label}>Monthly Rent</label>
+            <CurrencyInput 
+              style={s.input} 
+              value={monthlyRent} 
+              onChange={setMonthlyRent} 
+              min={0} 
+              max={100000}
+              error={validationErrors.monthlyRent}
+              onValidate={(valid, err) => setFieldError('monthlyRent', err)}
+            />
+          </div>
+          <div style={s.inputGroup}>
+            <label style={s.label}>Min. Buffer</label>
+            <CurrencyInput 
+              style={s.input} 
+              value={minBuffer} 
+              onChange={setMinBuffer} 
+              min={0} 
+              max={10000000}
+              error={validationErrors.minBuffer}
+              onValidate={(valid, err) => setFieldError('minBuffer', err)}
+            />
+          </div>
           <div style={s.inputGroup}>
             <label style={s.label}>Filing Status</label>
             <select style={s.select} value={filingStatus} onChange={e => setFilingStatus(e.target.value)}>
@@ -3516,20 +3725,139 @@ export default function HomePurchaseOptimizer() {
           </div>
           
           <h3 style={s.section}>Rates</h3>
-          <div style={s.inputGroup}><label style={s.label}>Mortgage (%)</label><input type="number" step="0.125" style={s.input} value={mortgageRate} onChange={e => setMortgageRate(Number(e.target.value))} /></div>
-          <div style={s.inputGroup}><label style={s.label}>Margin (%)</label><input type="number" step="0.25" style={s.input} value={marginRate} onChange={e => setMarginRate(Number(e.target.value))} /></div>
-          <div style={s.inputGroup}><label style={s.label}>HELOC (%)</label><input type="number" step="0.25" style={s.input} value={helocRate} onChange={e => setHelocRate(Number(e.target.value))} /></div>
-          <div style={s.inputGroup}><label style={s.label}>Cash-Out Refi (%)</label><input type="number" step="0.125" style={s.input} value={cashOutRefiRate} onChange={e => setCashOutRefiRate(Number(e.target.value))} /></div>
-          <div style={s.inputGroup}><label style={s.label}>Total Investment Return (%)</label><input type="number" step="0.5" style={s.input} value={investmentReturn} onChange={e => setInvestmentReturn(Number(e.target.value))} /></div>
+          <div style={s.inputGroup}>
+            <label style={s.label}>Mortgage (%)</label>
+            <NumberInput 
+              style={s.input} 
+              value={mortgageRate} 
+              onChange={setMortgageRate} 
+              min={0.1} 
+              max={20} 
+              step={0.125}
+              error={validationErrors.mortgageRate}
+              onValidate={(valid, err) => setFieldError('mortgageRate', err)}
+            />
+          </div>
+          <div style={s.inputGroup}>
+            <label style={s.label}>Margin (%)</label>
+            <NumberInput 
+              style={s.input} 
+              value={marginRate} 
+              onChange={setMarginRate} 
+              min={0} 
+              max={20} 
+              step={0.25}
+              error={validationErrors.marginRate}
+              onValidate={(valid, err) => setFieldError('marginRate', err)}
+            />
+          </div>
+          <div style={s.inputGroup}>
+            <label style={s.label}>HELOC (%)</label>
+            <NumberInput 
+              style={s.input} 
+              value={helocRate} 
+              onChange={setHelocRate} 
+              min={0} 
+              max={20} 
+              step={0.25}
+              error={validationErrors.helocRate}
+              onValidate={(valid, err) => setFieldError('helocRate', err)}
+            />
+          </div>
+          <div style={s.inputGroup}>
+            <label style={s.label}>Cash-Out Refi (%)</label>
+            <NumberInput 
+              style={s.input} 
+              value={cashOutRefiRate} 
+              onChange={setCashOutRefiRate} 
+              min={0} 
+              max={20} 
+              step={0.125}
+              error={validationErrors.cashOutRefiRate}
+              onValidate={(valid, err) => setFieldError('cashOutRefiRate', err)}
+            />
+          </div>
+          <div style={s.inputGroup}>
+            <label style={s.label}>Total Investment Return (%)</label>
+            <NumberInput 
+              style={s.input} 
+              value={investmentReturn} 
+              onChange={setInvestmentReturn} 
+              min={-20} 
+              max={30} 
+              step={0.5}
+              error={validationErrors.investmentReturn}
+              onValidate={(valid, err) => setFieldError('investmentReturn', err)}
+            />
+          </div>
           <div style={s.inputGroup}>
             <label style={s.label}>Dividend/Income Yield (%)</label>
-            <input type="number" step="0.25" style={s.input} value={dividendYield} onChange={e => setDividendYield(Number(e.target.value))} />
+            <NumberInput 
+              style={s.input} 
+              value={dividendYield} 
+              onChange={setDividendYield} 
+              min={0} 
+              max={20} 
+              step={0.25}
+              error={validationErrors.dividendYield}
+              onValidate={(valid, err) => setFieldError('dividendYield', err)}
+            />
             <div style={{ fontSize: '0.7rem', color: '#8b8ba7', marginTop: '4px' }}>For investment interest deduction limit (actual income only)</div>
           </div>
-          <div style={s.inputGroup}><label style={s.label}>Home Appreciation (%)</label><input type="number" step="0.5" style={s.input} value={homeAppreciation} onChange={e => setHomeAppreciation(Number(e.target.value))} /></div>
-          <div style={s.inputGroup}><label style={s.label}>Rent Growth (%/yr)</label><input type="number" step="0.5" style={s.input} value={rentGrowth} onChange={e => setRentGrowth(Number(e.target.value))} /></div>
+          <div style={s.inputGroup}>
+            <label style={s.label}>Home Appreciation (%)</label>
+            <NumberInput 
+              style={s.input} 
+              value={homeAppreciation} 
+              onChange={setHomeAppreciation} 
+              min={-10} 
+              max={20} 
+              step={0.5}
+              error={validationErrors.homeAppreciation}
+              onValidate={(valid, err) => setFieldError('homeAppreciation', err)}
+            />
+          </div>
+          <div style={s.inputGroup}>
+            <label style={s.label}>Rent Growth (%/yr)</label>
+            <NumberInput 
+              style={s.input} 
+              value={rentGrowth} 
+              onChange={setRentGrowth} 
+              min={-5} 
+              max={15} 
+              step={0.5}
+              error={validationErrors.rentGrowth}
+              onValidate={(valid, err) => setFieldError('rentGrowth', err)}
+            />
+          </div>
 
-          <button style={s.btn} onClick={handleOptimize}>🚀 Run Optimization</button>
+          <button 
+            style={{
+              ...s.btn,
+              opacity: isFormValid ? 1 : 0.5,
+              cursor: isFormValid ? 'pointer' : 'not-allowed'
+            }} 
+            onClick={handleOptimize}
+            disabled={!isFormValid}
+          >
+            🚀 Run Optimization
+          </button>
+          {!isFormValid && (
+            <div style={{ 
+              marginTop: '8px', 
+              padding: '10px 12px', 
+              background: 'rgba(248,113,113,0.1)', 
+              border: '1px solid rgba(248,113,113,0.3)', 
+              borderRadius: '8px',
+              fontSize: '0.8rem',
+              color: '#f87171',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}>
+              <span>⚠</span> Please fix validation errors above before running optimization
+            </div>
+          )}
         </aside>
         
         <main>
