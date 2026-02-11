@@ -3407,6 +3407,452 @@ export default function HomePurchaseOptimizer() {
     );
   };
 
+  // Sensitivity Analysis Tab
+  const renderSensitivity = () => {
+    const opt = optimizationResult?.optimal;
+    if (!opt) {
+      return (
+        <div style={{ textAlign: 'center', padding: '60px 40px' }}>
+          <div style={{ fontSize: '4rem', marginBottom: '20px' }}>📊</div>
+          <h2 style={{ fontSize: '1.5rem', fontWeight: '500', marginBottom: '16px', color: '#fff' }}>Run Optimization First</h2>
+          <p style={{ color: '#8b8ba7', marginBottom: '32px' }}>
+            Sensitivity analysis shows how changes in assumptions affect your break-even year.
+          </p>
+          <button style={{ ...s.btn, width: 'auto', padding: '16px 48px' }} onClick={handleOptimize}>🚀 Run Optimization</button>
+        </div>
+      );
+    }
+
+    // Calculate sensitivity scenarios
+    const baseBreakEven = opt.breakEvenYear === 'Never' ? 31 : opt.breakEvenYear;
+    
+    // Generate scenarios for 3x3 matrix (Home Appreciation vs Investment Return)
+    const appreciationRange = [homeAppreciation - 2, homeAppreciation, homeAppreciation + 2];
+    const returnRange = [investmentReturn - 2, investmentReturn, investmentReturn + 2];
+    
+    // Calculate break-even for each scenario
+    const calculateBreakEven = (appRate, invReturn) => {
+      const scenario = calcScenario({
+        homePrice,
+        cashDown: opt.cashDown,
+        marginLoan: opt.marginLoan,
+        helocAmount: opt.helocAmount,
+        mortgageRate: mortgageRate / 100,
+        loanTerm,
+        appreciationRate: appRate / 100,
+        investmentReturn: invReturn / 100,
+        dividendYield: dividendYield / 100,
+        monthlyRent,
+        rentGrowthRate: rentGrowth / 100,
+        marginRate: marginRate / 100,
+        helocRate: helocRate / 100,
+        fedRate,
+        caRate,
+        stateTax,
+        stdDeduction,
+        filingStatus,
+        grossIncome
+      });
+      return scenario.breakEvenYear === 'Never' ? 31 : scenario.breakEvenYear;
+    };
+
+    // Generate matrix data
+    const matrix = appreciationRange.map(appRate => 
+      returnRange.map(invReturn => ({
+        appRate,
+        invReturn,
+        breakEven: calculateBreakEven(appRate, invReturn)
+      }))
+    );
+
+    // Calculate sensitivity (impact of each variable)
+    const sensitivities = [
+      {
+        variable: 'Home Appreciation',
+        icon: '🏠',
+        lowValue: homeAppreciation - 2,
+        baseValue: homeAppreciation,
+        highValue: homeAppreciation + 2,
+        lowBreakEven: calculateBreakEven(homeAppreciation - 2, investmentReturn),
+        highBreakEven: calculateBreakEven(homeAppreciation + 2, investmentReturn),
+        unit: '%'
+      },
+      {
+        variable: 'Investment Return',
+        icon: '📈',
+        lowValue: investmentReturn - 2,
+        baseValue: investmentReturn,
+        highValue: investmentReturn + 2,
+        lowBreakEven: calculateBreakEven(homeAppreciation, investmentReturn - 2),
+        highBreakEven: calculateBreakEven(homeAppreciation, investmentReturn + 2),
+        unit: '%'
+      },
+      {
+        variable: 'Mortgage Rate',
+        icon: '🏦',
+        lowValue: mortgageRate - 1,
+        baseValue: mortgageRate,
+        highValue: mortgageRate + 1,
+        lowBreakEven: (() => {
+          const scenario = calcScenario({
+            ...opt,
+            homePrice,
+            cashDown: opt.cashDown,
+            marginLoan: opt.marginLoan,
+            helocAmount: opt.helocAmount,
+            mortgageRate: (mortgageRate - 1) / 100,
+            loanTerm,
+            appreciationRate: homeAppreciation / 100,
+            investmentReturn: investmentReturn / 100,
+            dividendYield: dividendYield / 100,
+            monthlyRent,
+            rentGrowthRate: rentGrowth / 100,
+            marginRate: marginRate / 100,
+            helocRate: helocRate / 100,
+            fedRate,
+            caRate,
+            stateTax,
+            stdDeduction,
+            filingStatus,
+            grossIncome
+          });
+          return scenario.breakEvenYear === 'Never' ? 31 : scenario.breakEvenYear;
+        })(),
+        highBreakEven: (() => {
+          const scenario = calcScenario({
+            ...opt,
+            homePrice,
+            cashDown: opt.cashDown,
+            marginLoan: opt.marginLoan,
+            helocAmount: opt.helocAmount,
+            mortgageRate: (mortgageRate + 1) / 100,
+            loanTerm,
+            appreciationRate: homeAppreciation / 100,
+            investmentReturn: investmentReturn / 100,
+            dividendYield: dividendYield / 100,
+            monthlyRent,
+            rentGrowthRate: rentGrowth / 100,
+            marginRate: marginRate / 100,
+            helocRate: helocRate / 100,
+            fedRate,
+            caRate,
+            stateTax,
+            stdDeduction,
+            filingStatus,
+            grossIncome
+          });
+          return scenario.breakEvenYear === 'Never' ? 31 : scenario.breakEvenYear;
+        })(),
+        unit: '%'
+      },
+      {
+        variable: 'Rent Growth',
+        icon: '📊',
+        lowValue: rentGrowth - 1,
+        baseValue: rentGrowth,
+        highValue: rentGrowth + 1,
+        lowBreakEven: (() => {
+          const scenario = calcScenario({
+            homePrice,
+            cashDown: opt.cashDown,
+            marginLoan: opt.marginLoan,
+            helocAmount: opt.helocAmount,
+            mortgageRate: mortgageRate / 100,
+            loanTerm,
+            appreciationRate: homeAppreciation / 100,
+            investmentReturn: investmentReturn / 100,
+            dividendYield: dividendYield / 100,
+            monthlyRent,
+            rentGrowthRate: (rentGrowth - 1) / 100,
+            marginRate: marginRate / 100,
+            helocRate: helocRate / 100,
+            fedRate,
+            caRate,
+            stateTax,
+            stdDeduction,
+            filingStatus,
+            grossIncome
+          });
+          return scenario.breakEvenYear === 'Never' ? 31 : scenario.breakEvenYear;
+        })(),
+        highBreakEven: (() => {
+          const scenario = calcScenario({
+            homePrice,
+            cashDown: opt.cashDown,
+            marginLoan: opt.marginLoan,
+            helocAmount: opt.helocAmount,
+            mortgageRate: mortgageRate / 100,
+            loanTerm,
+            appreciationRate: homeAppreciation / 100,
+            investmentReturn: investmentReturn / 100,
+            dividendYield: dividendYield / 100,
+            monthlyRent,
+            rentGrowthRate: (rentGrowth + 1) / 100,
+            marginRate: marginRate / 100,
+            helocRate: helocRate / 100,
+            fedRate,
+            caRate,
+            stateTax,
+            stdDeduction,
+            filingStatus,
+            grossIncome
+          });
+          return scenario.breakEvenYear === 'Never' ? 31 : scenario.breakEvenYear;
+        })(),
+        unit: '%/yr'
+      }
+    ].map(s => ({
+      ...s,
+      impact: Math.abs(s.highBreakEven - s.lowBreakEven),
+      direction: s.highBreakEven > s.lowBreakEven ? 'negative' : 'positive'
+    })).sort((a, b) => b.impact - a.impact);
+
+    // Find load-bearing assumptions
+    const loadBearing = sensitivities.filter(s => s.impact >= 3);
+
+    return (
+      <>
+        {/* Header */}
+        <div style={{
+          background: 'linear-gradient(135deg, rgba(139,92,246,0.15), rgba(168,85,247,0.1))',
+          borderRadius: '20px',
+          padding: '24px',
+          border: '2px solid rgba(139,92,246,0.4)',
+          marginBottom: '24px',
+          textAlign: 'center'
+        }}>
+          <div style={{ fontSize: '3rem', marginBottom: '8px' }}>📊</div>
+          <h2 style={{ fontSize: '1.8rem', fontWeight: '700', color: '#a78bfa', marginBottom: '8px' }}>Sensitivity Analysis</h2>
+          <p style={{ color: '#c0c0d0', margin: 0 }}>
+            How changes in assumptions affect your break-even year
+          </p>
+        </div>
+
+        {/* Load-Bearing Assumptions Alert */}
+        {loadBearing.length > 0 && (
+          <div style={{
+            background: 'rgba(251,191,36,0.1)',
+            border: '1px solid rgba(251,191,36,0.3)',
+            borderRadius: '12px',
+            padding: '16px 20px',
+            marginBottom: '24px'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+              <span style={{ fontSize: '1.3rem' }}>⚠️</span>
+              <span style={{ color: '#fbbf24', fontWeight: '600', fontSize: '1rem' }}>Load-Bearing Assumptions</span>
+            </div>
+            <p style={{ color: '#d0d0e0', fontSize: '0.9rem', margin: '0 0 12px 0' }}>
+              These assumptions have the biggest impact on your break-even. Small changes could shift the verdict:
+            </p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+              {loadBearing.map((s, i) => (
+                <span key={i} style={{
+                  padding: '6px 12px',
+                  borderRadius: '8px',
+                  background: 'rgba(251,191,36,0.2)',
+                  border: '1px solid rgba(251,191,36,0.4)',
+                  color: '#fbbf24',
+                  fontSize: '0.85rem',
+                  fontWeight: '500'
+                }}>
+                  {s.icon} {s.variable} ({s.impact} year impact)
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Tornado Chart */}
+        <div style={s.card}>
+          <h3 style={{ ...s.section, marginTop: 0 }}>🌪️ Tornado Chart - Variable Impact</h3>
+          <p style={{ color: '#8b8ba7', fontSize: '0.85rem', marginBottom: '20px' }}>
+            Shows how each variable affects break-even year. Base case: Year {baseBreakEven > 30 ? 'Never' : baseBreakEven}
+          </p>
+          
+          <div style={{ display: 'grid', gap: '16px' }}>
+            {sensitivities.map((s, i) => {
+              const maxImpact = Math.max(...sensitivities.map(x => x.impact));
+              const barWidth = maxImpact > 0 ? (s.impact / maxImpact) * 100 : 0;
+              
+              return (
+                <div key={i} style={{ display: 'grid', gridTemplateColumns: '140px 1fr', gap: '16px', alignItems: 'center' }}>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontSize: '0.85rem', color: '#fff', fontWeight: '500' }}>{s.icon} {s.variable}</div>
+                    <div style={{ fontSize: '0.7rem', color: '#8b8ba7' }}>{s.lowValue}{s.unit} → {s.highValue}{s.unit}</div>
+                  </div>
+                  <div style={{ position: 'relative' }}>
+                    {/* Center line (base case) */}
+                    <div style={{ 
+                      position: 'absolute', 
+                      left: '50%', 
+                      top: 0, 
+                      bottom: 0, 
+                      width: '2px', 
+                      background: 'rgba(255,255,255,0.3)',
+                      zIndex: 1 
+                    }} />
+                    
+                    <div style={{ display: 'flex', alignItems: 'center', height: '36px' }}>
+                      {/* Low scenario bar (left) */}
+                      <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end', paddingRight: '4px' }}>
+                        <div style={{
+                          height: '28px',
+                          width: `${barWidth / 2}%`,
+                          background: s.lowBreakEven < baseBreakEven ? 'linear-gradient(90deg, #4ade80, #22c55e)' : 'linear-gradient(90deg, #f87171, #ef4444)',
+                          borderRadius: '4px 0 0 4px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'flex-start',
+                          paddingLeft: '8px',
+                          minWidth: barWidth > 0 ? '40px' : '0'
+                        }}>
+                          <span style={{ fontSize: '0.75rem', color: '#fff', fontWeight: '600' }}>
+                            {s.lowBreakEven > 30 ? '∞' : `Y${s.lowBreakEven}`}
+                          </span>
+                        </div>
+                      </div>
+                      
+                      {/* High scenario bar (right) */}
+                      <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-start', paddingLeft: '4px' }}>
+                        <div style={{
+                          height: '28px',
+                          width: `${barWidth / 2}%`,
+                          background: s.highBreakEven < baseBreakEven ? 'linear-gradient(90deg, #22c55e, #4ade80)' : 'linear-gradient(90deg, #ef4444, #f87171)',
+                          borderRadius: '0 4px 4px 0',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'flex-end',
+                          paddingRight: '8px',
+                          minWidth: barWidth > 0 ? '40px' : '0'
+                        }}>
+                          <span style={{ fontSize: '0.75rem', color: '#fff', fontWeight: '600' }}>
+                            {s.highBreakEven > 30 ? '∞' : `Y${s.highBreakEven}`}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Labels */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '4px' }}>
+                      <span style={{ fontSize: '0.65rem', color: '#8b8ba7' }}>{s.lowValue}{s.unit}</span>
+                      <span style={{ fontSize: '0.65rem', color: '#f97316' }}>Base: Y{baseBreakEven > 30 ? '∞' : baseBreakEven}</span>
+                      <span style={{ fontSize: '0.65rem', color: '#8b8ba7' }}>{s.highValue}{s.unit}</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          
+          <div style={{ marginTop: '16px', padding: '12px', background: 'rgba(0,0,0,0.2)', borderRadius: '8px' }}>
+            <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', fontSize: '0.8rem' }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ width: '12px', height: '12px', borderRadius: '3px', background: '#4ade80' }}></span>
+                Earlier break-even (better for buying)
+              </span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ width: '12px', height: '12px', borderRadius: '3px', background: '#f87171' }}></span>
+                Later break-even (worse for buying)
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* 3x3 Matrix */}
+        <div style={s.card}>
+          <h3 style={{ ...s.section, marginTop: 0 }}>📋 Break-Even Matrix: Home Appreciation vs Investment Return</h3>
+          <p style={{ color: '#8b8ba7', fontSize: '0.85rem', marginBottom: '20px' }}>
+            Break-even year for different combinations of home appreciation and investment returns
+          </p>
+          
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ ...s.table, textAlign: 'center' }}>
+              <thead>
+                <tr>
+                  <th style={{ ...s.th, textAlign: 'center' }}></th>
+                  {returnRange.map((r, i) => (
+                    <th key={i} style={{ ...s.th, textAlign: 'center' }}>
+                      📈 {r}% Return
+                      {r === investmentReturn && <span style={{ color: '#f97316' }}> (base)</span>}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {matrix.map((row, rowIdx) => (
+                  <tr key={rowIdx}>
+                    <td style={{ ...s.td, fontWeight: '600', textAlign: 'left' }}>
+                      🏠 {appreciationRange[rowIdx]}% Appreciation
+                      {appreciationRange[rowIdx] === homeAppreciation && <span style={{ color: '#f97316' }}> (base)</span>}
+                    </td>
+                    {row.map((cell, colIdx) => {
+                      const isBase = cell.appRate === homeAppreciation && cell.invReturn === investmentReturn;
+                      const isBetter = cell.breakEven < baseBreakEven;
+                      const isWorse = cell.breakEven > baseBreakEven;
+                      
+                      return (
+                        <td 
+                          key={colIdx} 
+                          style={{ 
+                            ...s.td, 
+                            textAlign: 'center',
+                            background: isBase ? 'rgba(249,115,22,0.2)' : isBetter ? 'rgba(74,222,128,0.1)' : isWorse ? 'rgba(248,113,113,0.1)' : 'transparent',
+                            border: isBase ? '2px solid #f97316' : '1px solid rgba(255,255,255,0.05)',
+                            fontWeight: isBase ? '700' : '500'
+                          }}
+                        >
+                          <div style={{ 
+                            fontSize: '1.1rem', 
+                            color: cell.breakEven > 30 ? '#f87171' : isBetter ? '#4ade80' : isWorse ? '#f87171' : '#fff' 
+                          }}>
+                            {cell.breakEven > 30 ? 'Never' : `Year ${cell.breakEven}`}
+                          </div>
+                          {!isBase && (
+                            <div style={{ fontSize: '0.7rem', color: '#8b8ba7', marginTop: '2px' }}>
+                              {cell.breakEven < baseBreakEven ? `${baseBreakEven - cell.breakEven}yr sooner` : cell.breakEven > baseBreakEven ? `${cell.breakEven - baseBreakEven}yr later` : 'same'}
+                            </div>
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Interpretation */}
+        <div style={s.card}>
+          <h3 style={{ ...s.section, marginTop: 0 }}>💡 Interpretation</h3>
+          <div style={{ display: 'grid', gap: '12px' }}>
+            <div style={{ padding: '14px', background: 'rgba(74,222,128,0.1)', borderRadius: '10px', border: '1px solid rgba(74,222,128,0.2)' }}>
+              <div style={{ color: '#4ade80', fontWeight: '600', marginBottom: '6px' }}>When Buying Wins</div>
+              <div style={{ color: '#d0d0e0', fontSize: '0.9rem' }}>
+                Higher home appreciation ({homeAppreciation + 2}%+) or lower investment returns ({investmentReturn - 2}% or less) favor buying. 
+                {loadBearing.length > 0 && ` Your most sensitive variable is ${loadBearing[0].variable}.`}
+              </div>
+            </div>
+            <div style={{ padding: '14px', background: 'rgba(248,113,113,0.1)', borderRadius: '10px', border: '1px solid rgba(248,113,113,0.2)' }}>
+              <div style={{ color: '#f87171', fontWeight: '600', marginBottom: '6px' }}>When Renting Wins</div>
+              <div style={{ color: '#d0d0e0', fontSize: '0.9rem' }}>
+                Lower home appreciation ({homeAppreciation - 2}% or less) or higher investment returns ({investmentReturn + 2}%+) favor renting + investing.
+              </div>
+            </div>
+            <div style={{ padding: '14px', background: 'rgba(139,92,246,0.1)', borderRadius: '10px', border: '1px solid rgba(139,92,246,0.2)' }}>
+              <div style={{ color: '#a78bfa', fontWeight: '600', marginBottom: '6px' }}>Key Insight</div>
+              <div style={{ color: '#d0d0e0', fontSize: '0.9rem' }}>
+                The {sensitivities[0].variable.toLowerCase()} assumption has the biggest impact on your decision ({sensitivities[0].impact} years between best and worst case).
+                {baseBreakEven <= 7 && ' Even with unfavorable assumptions, buying may still make sense given your relatively quick base-case break-even.'}
+                {baseBreakEven > 15 && ' Consider stress-testing with more conservative assumptions before committing.'}
+              </div>
+            </div>
+          </div>
+        </div>
+      </>
+    );
+  };
+
   const renderAffordability = () => {
     const { options, monthlyTakeHome } = affordability;
 
@@ -4108,6 +4554,7 @@ export default function HomePurchaseOptimizer() {
               <>
                 <button style={{ ...s.tab, ...(activeTab === 'scenarios' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('scenarios')}>Side-by-Side</button>
                 <button style={{ ...s.tab, ...(activeTab === 'holding' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('holding')}>Own vs Rent</button>
+                <button style={{ ...s.tab, ...(activeTab === 'sensitivity' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('sensitivity')}>Sensitivity</button>
                 <button style={{ ...s.tab, ...(activeTab === 'tax' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('tax')}>Taxes</button>
                 <button style={{ ...s.tab, ...(activeTab === 'manual' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('manual')}>Build Your Own</button>
               </>
@@ -4120,6 +4567,7 @@ export default function HomePurchaseOptimizer() {
           {isExpertMode && activeTab === 'manual' && renderManual()}
           {isExpertMode && activeTab === 'tax' && renderTax()}
           {isExpertMode && activeTab === 'holding' && renderHolding()}
+          {isExpertMode && activeTab === 'sensitivity' && renderSensitivity()}
           {activeTab === 'afford' && renderAffordability()}
         </main>
       </div>
