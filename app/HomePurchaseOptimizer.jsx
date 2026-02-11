@@ -3534,12 +3534,12 @@ export default function HomePurchaseOptimizer() {
         
         <main>
           <div style={s.tabs}>
-            <button style={{ ...s.tab, ...(activeTab === 'optimize' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('optimize')}>Summary</button>
-            <button style={{ ...s.tab, ...(activeTab === 'scenarios' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('scenarios')}>Compare</button>
+            <button style={{ ...s.tab, ...(activeTab === 'optimize' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('optimize')}>Best Strategy</button>
+            <button style={{ ...s.tab, ...(activeTab === 'scenarios' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('scenarios')}>Side-by-Side</button>
             <button style={{ ...s.tab, ...(activeTab === 'holding' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('holding')}>Own vs Rent</button>
             <button style={{ ...s.tab, ...(activeTab === 'tax' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('tax')}>Taxes</button>
-            <button style={{ ...s.tab, ...(activeTab === 'manual' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('manual')}>Manual</button>
-            <button style={{ ...s.tab, ...(activeTab === 'afford' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('afford')}>Afford</button>
+            <button style={{ ...s.tab, ...(activeTab === 'manual' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('manual')}>Build Your Own</button>
+            <button style={{ ...s.tab, ...(activeTab === 'afford' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('afford')}>What Can I Buy?</button>
           </div>
 
           {activeTab === 'optimize' && renderOptimize()}
