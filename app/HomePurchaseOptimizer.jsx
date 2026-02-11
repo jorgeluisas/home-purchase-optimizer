@@ -1802,11 +1802,28 @@ export default function HomePurchaseOptimizer() {
       return (
         <div style={{ textAlign: 'center', padding: '60px 40px' }}>
           <div style={{ fontSize: '4rem', marginBottom: '20px' }}>🏠</div>
-          <h2 style={{ fontSize: '1.5rem', fontWeight: '500', marginBottom: '16px', color: '#fff' }}>Ready to Find Your Optimal Strategy</h2>
-          <p style={{ color: '#8b8ba7', marginBottom: '32px', maxWidth: '500px', margin: '0 auto 32px' }}>
-            Enter your details, then click below. Tests hundreds of combinations to find your best strategy.
+          <h2 style={{ fontSize: '1.5rem', fontWeight: '500', marginBottom: '16px', color: '#fff' }}>Find Your Best Purchase Strategy</h2>
+          <p style={{ color: '#c0c0d0', marginBottom: '24px', maxWidth: '550px', margin: '0 auto 24px', lineHeight: '1.7' }}>
+            The optimizer tests hundreds of combinations of down payment amounts, margin loans, HELOCs, and mortgage structures to find the strategy that <strong style={{ color: '#4ade80' }}>maximizes your 10-year wealth</strong> while managing risk.
           </p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', maxWidth: '500px', margin: '0 auto 28px' }}>
+            <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '10px', padding: '14px' }}>
+              <div style={{ fontSize: '0.65rem', color: '#8b8ba7', textTransform: 'uppercase', marginBottom: '4px' }}>Home Price</div>
+              <div style={{ fontSize: '1.1rem', fontWeight: '600', color: '#fff' }}>{fmt$(homePrice)}</div>
+            </div>
+            <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '10px', padding: '14px' }}>
+              <div style={{ fontSize: '0.65rem', color: '#8b8ba7', textTransform: 'uppercase', marginBottom: '4px' }}>Available Cash</div>
+              <div style={{ fontSize: '1.1rem', fontWeight: '600', color: '#fff' }}>{fmt$(totalSavings)}</div>
+            </div>
+            <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '10px', padding: '14px' }}>
+              <div style={{ fontSize: '0.65rem', color: '#8b8ba7', textTransform: 'uppercase', marginBottom: '4px' }}>Monthly Rent</div>
+              <div style={{ fontSize: '1.1rem', fontWeight: '600', color: '#fff' }}>{fmt$(monthlyRent)}/mo</div>
+            </div>
+          </div>
           <button style={{ ...s.btn, width: 'auto', padding: '16px 48px' }} onClick={handleOptimize}>🚀 Run Optimization</button>
+          <p style={{ color: '#8b8ba7', fontSize: '0.78rem', marginTop: '12px' }}>
+            Not sure about the home price? Start with the <button onClick={() => setActiveTab('afford')} style={{ background: 'none', border: 'none', color: '#f97316', cursor: 'pointer', fontSize: '0.78rem', textDecoration: 'underline', padding: 0 }}>What Can I Buy?</button> tab first.
+          </p>
         </div>
       );
     }
