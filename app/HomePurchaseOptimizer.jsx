@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area, ComposedChart } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area, ComposedChart, ReferenceLine, Label } from 'recharts';
 
 // URL param mapping (short keys for cleaner URLs)
 const URL_PARAM_MAP = {
@@ -2642,19 +2642,104 @@ export default function HomePurchaseOptimizer() {
         
         <div style={s.card}>
           <h3 style={{ ...s.section, marginTop: 0 }}>Wealth: Own vs. Rent + Invest</h3>
-          <div style={s.chart}>
+          
+          {/* Chart Legend with Annotations */}
+          <div style={{ display: 'flex', gap: '16px', marginBottom: '12px', flexWrap: 'wrap', fontSize: '0.75rem' }}>
+            {opt.breakEvenYear !== 'Never' && opt.breakEvenYear <= 30 && (
+              <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ width: '20px', height: '2px', background: '#22c55e', display: 'inline-block' }}></span>
+                <span style={{ color: '#22c55e' }}>Break-even Year {opt.breakEvenYear}</span>
+              </span>
+            )}
+            <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ width: '20px', height: '2px', background: 'rgba(167,139,250,0.5)', borderStyle: 'dashed', display: 'inline-block' }}></span>
+              <span style={{ color: '#a78bfa' }}>Milestones (10/20/30 yr)</span>
+            </span>
+          </div>
+          
+          <div style={{ ...s.chart, height: '380px' }}>
             <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={opt.yearlyAnalysis}>
+              <ComposedChart data={opt.yearlyAnalysis} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
                 <XAxis dataKey="year" stroke="#8b8ba7" tick={{fill:'#8b8ba7'}} />
                 <YAxis stroke="#8b8ba7" tick={{fill:'#8b8ba7'}} tickFormatter={v=>`$${(v/1000000).toFixed(1)}M`} />
                 <Tooltip contentStyle={{background:'#1a1a2e',border:'1px solid rgba(255,255,255,0.1)',borderRadius:'8px'}} formatter={v=>fmt$(v)} labelFormatter={l=>`Year ${l}`} />
                 <Legend />
+                
+                {/* Break-even vertical line */}
+                {opt.breakEvenYear !== 'Never' && opt.breakEvenYear <= 30 && (
+                  <ReferenceLine 
+                    x={opt.breakEvenYear} 
+                    stroke="#22c55e" 
+                    strokeWidth={2}
+                    strokeDasharray="5 5"
+                  >
+                    <Label 
+                      value={`Break-even: Year ${opt.breakEvenYear}`} 
+                      position="top" 
+                      fill="#22c55e"
+                      fontSize={11}
+                      fontWeight={600}
+                    />
+                  </ReferenceLine>
+                )}
+                
+                {/* 10-year milestone */}
+                <ReferenceLine 
+                  x={10} 
+                  stroke="rgba(167,139,250,0.4)" 
+                  strokeDasharray="3 3"
+                >
+                  <Label value="10yr" position="bottom" fill="#a78bfa" fontSize={10} />
+                </ReferenceLine>
+                
+                {/* 20-year milestone */}
+                <ReferenceLine 
+                  x={20} 
+                  stroke="rgba(167,139,250,0.4)" 
+                  strokeDasharray="3 3"
+                >
+                  <Label value="20yr" position="bottom" fill="#a78bfa" fontSize={10} />
+                </ReferenceLine>
+                
+                {/* 30-year milestone */}
+                <ReferenceLine 
+                  x={30} 
+                  stroke="rgba(167,139,250,0.4)" 
+                  strokeDasharray="3 3"
+                >
+                  <Label value="30yr" position="bottom" fill="#a78bfa" fontSize={10} />
+                </ReferenceLine>
+                
                 <Line type="monotone" dataKey="ownerWealth" name="Own (equity - sell costs)" stroke="#f97316" strokeWidth={3} dot={false} />
                 <Line type="monotone" dataKey="renterWealth" name="Rent + Invest" stroke="#60a5fa" strokeWidth={3} dot={false} />
               </ComposedChart>
             </ResponsiveContainer>
           </div>
+          
+          {/* Break-even callout */}
+          {opt.breakEvenYear !== 'Never' && opt.breakEvenYear <= 30 && (
+            <div style={{
+              marginTop: '12px',
+              padding: '12px 16px',
+              background: 'rgba(34,197,94,0.1)',
+              border: '1px solid rgba(34,197,94,0.3)',
+              borderRadius: '8px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px'
+            }}>
+              <span style={{ fontSize: '1.5rem' }}>📍</span>
+              <div>
+                <div style={{ color: '#22c55e', fontWeight: '600', fontSize: '0.9rem' }}>
+                  Break-even at Year {opt.breakEvenYear}
+                </div>
+                <div style={{ color: '#8b8ba7', fontSize: '0.8rem' }}>
+                  After this point, buying puts you ahead of renting + investing
+                </div>
+              </div>
+            </div>
+          )}
         </div>
         
         <div style={s.card}>
