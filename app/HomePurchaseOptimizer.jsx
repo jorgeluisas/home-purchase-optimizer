@@ -1976,6 +1976,121 @@ export default function HomePurchaseOptimizer() {
           </div>
         </div>
 
+        {/* DOWNSIDE RISK VISUALIZATION */}
+        <div style={{
+          background: 'linear-gradient(135deg, rgba(248,113,113,0.1), rgba(239,68,68,0.05))',
+          borderRadius: '16px',
+          padding: '20px 24px',
+          border: '1px solid rgba(248,113,113,0.3)',
+          marginBottom: '24px'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
+            <span style={{ fontSize: '1.5rem' }}>⚠️</span>
+            <div>
+              <div style={{ color: '#f87171', fontWeight: '600', fontSize: '1rem' }}>Downside Scenario Analysis</div>
+              <div style={{ color: '#8b8ba7', fontSize: '0.8rem' }}>What if things go wrong?</div>
+            </div>
+          </div>
+          
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '16px' }}>
+            {/* Market Down 20% */}
+            <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '10px', padding: '14px' }}>
+              <div style={{ fontSize: '0.7rem', color: '#8b8ba7', textTransform: 'uppercase', marginBottom: '6px' }}>Portfolio -20%</div>
+              <div style={{ fontSize: '1.1rem', fontWeight: '600', color: '#f87171' }}>{fmt$(stockPortfolio * 0.8)}</div>
+              <div style={{ fontSize: '0.75rem', color: '#8b8ba7', marginTop: '4px' }}>
+                Loss: {fmt$(stockPortfolio * 0.2)}
+              </div>
+            </div>
+            
+            {/* Home Value Stagnant */}
+            <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '10px', padding: '14px' }}>
+              <div style={{ fontSize: '0.7rem', color: '#8b8ba7', textTransform: 'uppercase', marginBottom: '6px' }}>Home 0% Growth (5yr)</div>
+              <div style={{ fontSize: '1.1rem', fontWeight: '600', color: '#fbbf24' }}>{fmt$(homePrice)}</div>
+              <div style={{ fontSize: '0.75rem', color: '#8b8ba7', marginTop: '4px' }}>
+                vs {fmt$(homePrice * Math.pow(1.05, 5))} at 5%
+              </div>
+            </div>
+            
+            {/* Higher Rates */}
+            <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '10px', padding: '14px' }}>
+              <div style={{ fontSize: '0.7rem', color: '#8b8ba7', textTransform: 'uppercase', marginBottom: '6px' }}>Rates +200bps</div>
+              <div style={{ fontSize: '1.1rem', fontWeight: '600', color: '#fb923c' }}>{(mortgageRate + 2).toFixed(1)}%</div>
+              <div style={{ fontSize: '0.75rem', color: '#8b8ba7', marginTop: '4px' }}>
+                HELOC: {(helocRate + 2).toFixed(1)}%
+              </div>
+            </div>
+          </div>
+          
+          {/* Margin Call Risk */}
+          {opt.marginLoan > 0 && (
+            <div style={{
+              background: 'rgba(248,113,113,0.15)',
+              borderRadius: '10px',
+              padding: '14px',
+              marginBottom: '12px',
+              border: '1px solid rgba(248,113,113,0.3)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                <span style={{ fontSize: '1.1rem' }}>📉</span>
+                <span style={{ color: '#f87171', fontWeight: '600', fontSize: '0.9rem' }}>Margin Call Risk</span>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', fontSize: '0.85rem' }}>
+                <div>
+                  <div style={{ color: '#8b8ba7', marginBottom: '2px' }}>Current Margin Used</div>
+                  <div style={{ color: '#fff', fontWeight: '500' }}>{fmtPctWhole((opt.marginLoan / stockPortfolio) * 100)} ({fmt$(opt.marginLoan)})</div>
+                </div>
+                <div>
+                  <div style={{ color: '#8b8ba7', marginBottom: '2px' }}>Margin Call Threshold</div>
+                  <div style={{ color: '#fbbf24', fontWeight: '500' }}>~30% of portfolio</div>
+                </div>
+                <div>
+                  <div style={{ color: '#8b8ba7', marginBottom: '2px' }}>Portfolio Drop to Trigger</div>
+                  <div style={{ color: '#f87171', fontWeight: '500' }}>
+                    {stockPortfolio * 0.3 > opt.marginLoan 
+                      ? `>${fmtPctWhole(((stockPortfolio - (opt.marginLoan / 0.3)) / stockPortfolio) * 100)} drop`
+                      : 'Already at risk!'
+                    }
+                  </div>
+                </div>
+              </div>
+              {stockPortfolio * 0.3 > opt.marginLoan && (
+                <div style={{ marginTop: '10px', fontSize: '0.8rem', color: '#d0d0e0' }}>
+                  💡 Keep ~{fmt$(opt.marginLoan * 0.3)} in cash reserves to cover potential margin calls
+                </div>
+              )}
+            </div>
+          )}
+          
+          {/* Buy vs Rent Downside Comparison */}
+          <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '10px', padding: '14px' }}>
+            <div style={{ fontSize: '0.85rem', color: '#8b8ba7', fontWeight: '600', marginBottom: '10px' }}>Downside Comparison: Buy vs Rent</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+              <div>
+                <div style={{ color: '#f87171', fontWeight: '500', marginBottom: '6px' }}>If You Buy (Downside)</div>
+                <ul style={{ margin: 0, paddingLeft: '16px', color: '#c0c0d0', fontSize: '0.8rem', lineHeight: '1.6' }}>
+                  <li>Underwater mortgage if home drops 20%+</li>
+                  <li>Can't easily move for job opportunities</li>
+                  <li>Maintenance costs don't go away</li>
+                  {opt.marginLoan > 0 && <li>Margin call risk if market tanks</li>}
+                </ul>
+              </div>
+              <div>
+                <div style={{ color: '#60a5fa', fontWeight: '500', marginBottom: '6px' }}>If You Rent (Downside)</div>
+                <ul style={{ margin: 0, paddingLeft: '16px', color: '#c0c0d0', fontSize: '0.8rem', lineHeight: '1.6' }}>
+                  <li>Portfolio drops 20% = {fmt$(stockPortfolio * 0.2)} loss</li>
+                  <li>Rent increases ({rentGrowth}%/yr compounds)</li>
+                  <li>Landlord could sell/evict you</li>
+                  <li>No equity building</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+          
+          <div style={{ marginTop: '12px', fontSize: '0.8rem', color: '#8b8ba7', fontStyle: 'italic' }}>
+            💡 Both paths have risks. Buying locks in housing costs but ties up capital. Renting maintains flexibility but exposes you to rent increases.
+          </div>
+        </div>
+
         {/* Diagnostics - why certain strategies may not appear */}
         {diag && !optimizationResult.canBuyCash && (
           <div style={s.warning}>
