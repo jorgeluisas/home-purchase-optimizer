@@ -4687,7 +4687,7 @@ export default function HomePurchaseOptimizer() {
           <div style={{ fontSize: '0.82rem', color: '#8b8ba7', lineHeight: '1.7' }}>
             <p style={{ marginBottom: '10px' }}>For each down payment level, we find the maximum home price limited by whichever binds first:</p>
             <div style={{ padding: '10px 16px', background: 'rgba(0,0,0,0.15)', borderRadius: '8px', marginBottom: '10px' }}>
-              <strong style={{ color: '#fbbf24' }}>Income:</strong> Monthly housing cost (PITI + HOA) cannot exceed 43% of gross income — the max most lenders approve.
+              <strong style={{ color: '#fbbf24' }}>Income:</strong> Monthly housing cost (PITI: principal, interest, taxes, insurance + HOA) cannot exceed 43% of gross income — the max most lenders approve.
             </div>
             <div style={{ padding: '10px 16px', background: 'rgba(0,0,0,0.15)', borderRadius: '8px', marginBottom: '10px' }}>
               <strong style={{ color: '#a78bfa' }}>Savings:</strong> Down payment + closing costs cannot exceed your savings minus {fmt$(minBuffer)} buffer.
@@ -4695,7 +4695,7 @@ export default function HomePurchaseOptimizer() {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 24px', marginTop: '12px' }}>
               <div>Property Tax: {fmtPct(SF.propTaxRate)} (SF avg)</div>
               <div>Insurance: 0.35% of home price</div>
-              <div>PMI: 0.50%/yr of loan (if {'<'}20% down)</div>
+              <div>PMI (private mortgage insurance): 0.50%/yr of loan (if {'<'}20% down)</div>
               <div>Loan: {loanTerm}yr at {mortgageRate}%</div>
               <div>Take-home est: ~{fmtPctWhole((1 - estEffectiveTaxRate) * 100)} of gross</div>
               <div>Closing: ~{fmtPct(SF.closeBuy)} + transfer tax</div>
@@ -4796,11 +4796,12 @@ export default function HomePurchaseOptimizer() {
           <h3 style={{ ...s.section, marginTop: 0 }}>Your Situation</h3>
           <div style={s.inputGroup}>
             <label style={s.label}>Target Home Price</label>
-            <CurrencyInput 
-              style={s.input} 
-              value={homePrice} 
-              onChange={setHomePrice} 
-              min={100000} 
+            <div style={{ fontSize: '0.7rem', color: '#8b8ba7', marginTop: '-2px', marginBottom: '4px' }}>Use "What Can I Buy?" tab if unsure</div>
+            <CurrencyInput
+              style={s.input}
+              value={homePrice}
+              onChange={setHomePrice}
+              min={100000}
               max={50000000}
               error={validationErrors.homePrice}
               onValidate={(valid, err) => setFieldError('homePrice', err)}
@@ -4808,11 +4809,12 @@ export default function HomePurchaseOptimizer() {
           </div>
           <div style={s.inputGroup}>
             <label style={s.label}>Total Cash Savings</label>
-            <CurrencyInput 
-              style={s.input} 
-              value={totalSavings} 
-              onChange={setTotalSavings} 
-              min={0} 
+            <div style={{ fontSize: '0.7rem', color: '#8b8ba7', marginTop: '-2px', marginBottom: '4px' }}>Cash available for down payment + closing costs</div>
+            <CurrencyInput
+              style={s.input}
+              value={totalSavings}
+              onChange={setTotalSavings}
+              min={0}
               max={50000000}
               error={validationErrors.totalSavings}
               onValidate={(valid, err) => setFieldError('totalSavings', err)}
@@ -4820,11 +4822,12 @@ export default function HomePurchaseOptimizer() {
           </div>
           <div style={s.inputGroup}>
             <label style={s.label}>Gross Income</label>
-            <CurrencyInput 
-              style={s.input} 
-              value={grossIncome} 
-              onChange={setGrossIncome} 
-              min={1} 
+            <div style={{ fontSize: '0.7rem', color: '#8b8ba7', marginTop: '-2px', marginBottom: '4px' }}>Before taxes — used for DTI ratio and take-home</div>
+            <CurrencyInput
+              style={s.input}
+              value={grossIncome}
+              onChange={setGrossIncome}
+              min={1}
               max={50000000}
               error={validationErrors.grossIncome}
               onValidate={(valid, err) => setFieldError('grossIncome', err)}
@@ -4832,11 +4835,12 @@ export default function HomePurchaseOptimizer() {
           </div>
           <div style={s.inputGroup}>
             <label style={s.label}>Monthly Rent</label>
-            <CurrencyInput 
-              style={s.input} 
-              value={monthlyRent} 
-              onChange={setMonthlyRent} 
-              min={0} 
+            <div style={{ fontSize: '0.7rem', color: '#8b8ba7', marginTop: '-2px', marginBottom: '4px' }}>Current rent — used to compare owning vs renting</div>
+            <CurrencyInput
+              style={s.input}
+              value={monthlyRent}
+              onChange={setMonthlyRent}
+              min={0}
               max={100000}
               error={validationErrors.monthlyRent}
               onValidate={(valid, err) => setFieldError('monthlyRent', err)}
@@ -4844,6 +4848,7 @@ export default function HomePurchaseOptimizer() {
           </div>
           <div style={s.inputGroup}>
             <label style={s.label}>Filing Status</label>
+            <div style={{ fontSize: '0.7rem', color: '#8b8ba7', marginTop: '-2px', marginBottom: '4px' }}>Affects tax brackets and take-home pay</div>
             <select style={s.select} value={filingStatus} onChange={e => setFilingStatus(e.target.value)}>
               <option value="married">Married Filing Jointly</option>
               <option value="single">Single / Head of Household</option>
@@ -4851,6 +4856,7 @@ export default function HomePurchaseOptimizer() {
           </div>
           <div style={s.inputGroup}>
             <label style={s.label}>Mortgage Rate (%)</label>
+            <div style={{ fontSize: '0.7rem', color: '#8b8ba7', marginTop: '-2px', marginBottom: '4px' }}>Current 30-year fixed — check with lenders for quotes</div>
             <NumberInput
               style={s.input}
               value={mortgageRate}
