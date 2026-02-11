@@ -1012,6 +1012,39 @@ export default function HomePurchaseOptimizer() {
   // Expert/Quick Mode state
   const [isExpertMode, setIsExpertMode] = useState(true);
 
+  // Custom assumptions state (editable SF constants)
+  const [customAssumptions, setCustomAssumptions] = useState({
+    propTaxRate: 1.18,      // % (SF default)
+    transferTax: 0.68,      // % (SF default)
+    parcelTax: 350,         // $ annual
+    realtorComm: 5,         // %
+    closeBuy: 1.5,          // %
+    closeSell: 1,           // %
+    insuranceRate: 0.35,    // %
+    maintenanceRate: 1,     // %
+    pmiRate: 0.5,           // %
+  });
+  const [showAssumptions, setShowAssumptions] = useState(false);
+  
+  // Check if assumptions have been modified from defaults
+  const assumptionsModified = useMemo(() => {
+    const defaults = {
+      propTaxRate: 1.18, transferTax: 0.68, parcelTax: 350,
+      realtorComm: 5, closeBuy: 1.5, closeSell: 1,
+      insuranceRate: 0.35, maintenanceRate: 1, pmiRate: 0.5
+    };
+    return Object.keys(defaults).some(k => customAssumptions[k] !== defaults[k]);
+  }, [customAssumptions]);
+
+  // Reset assumptions to defaults
+  const resetAssumptions = useCallback(() => {
+    setCustomAssumptions({
+      propTaxRate: 1.18, transferTax: 0.68, parcelTax: 350,
+      realtorComm: 5, closeBuy: 1.5, closeSell: 1,
+      insuranceRate: 0.35, maintenanceRate: 1, pmiRate: 0.5
+    });
+  }, []);
+
   // Apply preset function
   const applyPreset = useCallback((presetKey) => {
     const preset = SCENARIO_PRESETS[presetKey];
@@ -2510,6 +2543,225 @@ export default function HomePurchaseOptimizer() {
               <div style={{ ...s.costLine, fontWeight: '600' }}><span>Total tax benefit:</span><span style={{ color: '#4ade80' }}>{fmt$(sc.totalTaxBenefit)}/yr</span></div>
             </div>
           </div>
+        </div>
+        
+        {/* Edit Assumptions Section */}
+        <div style={{
+          ...s.card,
+          background: assumptionsModified ? 'rgba(251,191,36,0.05)' : 'rgba(255,255,255,0.02)',
+          border: assumptionsModified ? '1px solid rgba(251,191,36,0.3)' : '1px solid rgba(255,255,255,0.06)'
+        }}>
+          <div 
+            onClick={() => setShowAssumptions(!showAssumptions)}
+            style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'space-between', 
+              cursor: 'pointer',
+              padding: '4px 0'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span style={{ fontSize: '1.2rem' }}>⚙️</span>
+              <div>
+                <h3 style={{ ...s.section, marginTop: 0, marginBottom: '4px' }}>Edit Assumptions</h3>
+                <div style={{ fontSize: '0.8rem', color: assumptionsModified ? '#fbbf24' : '#8b8ba7' }}>
+                  {assumptionsModified ? '⚠️ Custom values active' : 'SF defaults (click to customize)'}
+                </div>
+              </div>
+            </div>
+            <span style={{ color: '#8b8ba7', fontSize: '1.2rem' }}>{showAssumptions ? '▼' : '▶'}</span>
+          </div>
+          
+          {showAssumptions && (
+            <div style={{ marginTop: '20px' }}>
+              {/* Reset Button */}
+              {assumptionsModified && (
+                <button
+                  onClick={resetAssumptions}
+                  style={{
+                    marginBottom: '16px',
+                    padding: '8px 16px',
+                    borderRadius: '8px',
+                    border: '1px solid rgba(251,191,36,0.4)',
+                    background: 'rgba(251,191,36,0.1)',
+                    color: '#fbbf24',
+                    fontSize: '0.85rem',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
+                >
+                  🔄 Reset to SF Defaults
+                </button>
+              )}
+              
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
+                {/* Property Tax Rate */}
+                <div style={s.inputGroup}>
+                  <label style={{ ...s.label, fontSize: '0.75rem' }}>
+                    Property Tax Rate (%)
+                    {customAssumptions.propTaxRate !== 1.18 && <span style={{ color: '#fbbf24' }}> ★</span>}
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    style={{ ...s.input, fontSize: '0.9rem', padding: '10px' }}
+                    value={customAssumptions.propTaxRate}
+                    onChange={e => setCustomAssumptions(prev => ({ ...prev, propTaxRate: parseFloat(e.target.value) || 0 }))}
+                  />
+                  <div style={{ fontSize: '0.65rem', color: '#8b8ba7', marginTop: '2px' }}>SF default: 1.18%</div>
+                </div>
+
+                {/* Transfer Tax */}
+                <div style={s.inputGroup}>
+                  <label style={{ ...s.label, fontSize: '0.75rem' }}>
+                    Transfer Tax (%)
+                    {customAssumptions.transferTax !== 0.68 && <span style={{ color: '#fbbf24' }}> ★</span>}
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    style={{ ...s.input, fontSize: '0.9rem', padding: '10px' }}
+                    value={customAssumptions.transferTax}
+                    onChange={e => setCustomAssumptions(prev => ({ ...prev, transferTax: parseFloat(e.target.value) || 0 }))}
+                  />
+                  <div style={{ fontSize: '0.65rem', color: '#8b8ba7', marginTop: '2px' }}>SF default: 0.68%</div>
+                </div>
+
+                {/* Parcel Tax */}
+                <div style={s.inputGroup}>
+                  <label style={{ ...s.label, fontSize: '0.75rem' }}>
+                    Annual Parcel Tax ($)
+                    {customAssumptions.parcelTax !== 350 && <span style={{ color: '#fbbf24' }}> ★</span>}
+                  </label>
+                  <input
+                    type="number"
+                    step="10"
+                    style={{ ...s.input, fontSize: '0.9rem', padding: '10px' }}
+                    value={customAssumptions.parcelTax}
+                    onChange={e => setCustomAssumptions(prev => ({ ...prev, parcelTax: parseFloat(e.target.value) || 0 }))}
+                  />
+                  <div style={{ fontSize: '0.65rem', color: '#8b8ba7', marginTop: '2px' }}>SF default: $350</div>
+                </div>
+
+                {/* Realtor Commission */}
+                <div style={s.inputGroup}>
+                  <label style={{ ...s.label, fontSize: '0.75rem' }}>
+                    Realtor Commission (%)
+                    {customAssumptions.realtorComm !== 5 && <span style={{ color: '#fbbf24' }}> ★</span>}
+                  </label>
+                  <input
+                    type="number"
+                    step="0.25"
+                    style={{ ...s.input, fontSize: '0.9rem', padding: '10px' }}
+                    value={customAssumptions.realtorComm}
+                    onChange={e => setCustomAssumptions(prev => ({ ...prev, realtorComm: parseFloat(e.target.value) || 0 }))}
+                  />
+                  <div style={{ fontSize: '0.65rem', color: '#8b8ba7', marginTop: '2px' }}>Default: 5% (seller pays)</div>
+                </div>
+
+                {/* Closing Costs - Buy */}
+                <div style={s.inputGroup}>
+                  <label style={{ ...s.label, fontSize: '0.75rem' }}>
+                    Buyer Closing Costs (%)
+                    {customAssumptions.closeBuy !== 1.5 && <span style={{ color: '#fbbf24' }}> ★</span>}
+                  </label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    style={{ ...s.input, fontSize: '0.9rem', padding: '10px' }}
+                    value={customAssumptions.closeBuy}
+                    onChange={e => setCustomAssumptions(prev => ({ ...prev, closeBuy: parseFloat(e.target.value) || 0 }))}
+                  />
+                  <div style={{ fontSize: '0.65rem', color: '#8b8ba7', marginTop: '2px' }}>Default: 1.5%</div>
+                </div>
+
+                {/* Closing Costs - Sell */}
+                <div style={s.inputGroup}>
+                  <label style={{ ...s.label, fontSize: '0.75rem' }}>
+                    Seller Closing Costs (%)
+                    {customAssumptions.closeSell !== 1 && <span style={{ color: '#fbbf24' }}> ★</span>}
+                  </label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    style={{ ...s.input, fontSize: '0.9rem', padding: '10px' }}
+                    value={customAssumptions.closeSell}
+                    onChange={e => setCustomAssumptions(prev => ({ ...prev, closeSell: parseFloat(e.target.value) || 0 }))}
+                  />
+                  <div style={{ fontSize: '0.65rem', color: '#8b8ba7', marginTop: '2px' }}>Default: 1%</div>
+                </div>
+
+                {/* Insurance Rate */}
+                <div style={s.inputGroup}>
+                  <label style={{ ...s.label, fontSize: '0.75rem' }}>
+                    Insurance Rate (%)
+                    {customAssumptions.insuranceRate !== 0.35 && <span style={{ color: '#fbbf24' }}> ★</span>}
+                  </label>
+                  <input
+                    type="number"
+                    step="0.05"
+                    style={{ ...s.input, fontSize: '0.9rem', padding: '10px' }}
+                    value={customAssumptions.insuranceRate}
+                    onChange={e => setCustomAssumptions(prev => ({ ...prev, insuranceRate: parseFloat(e.target.value) || 0 }))}
+                  />
+                  <div style={{ fontSize: '0.65rem', color: '#8b8ba7', marginTop: '2px' }}>Default: 0.35%</div>
+                </div>
+
+                {/* Maintenance Rate */}
+                <div style={s.inputGroup}>
+                  <label style={{ ...s.label, fontSize: '0.75rem' }}>
+                    Maintenance Rate (%)
+                    {customAssumptions.maintenanceRate !== 1 && <span style={{ color: '#fbbf24' }}> ★</span>}
+                  </label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    style={{ ...s.input, fontSize: '0.9rem', padding: '10px' }}
+                    value={customAssumptions.maintenanceRate}
+                    onChange={e => setCustomAssumptions(prev => ({ ...prev, maintenanceRate: parseFloat(e.target.value) || 0 }))}
+                  />
+                  <div style={{ fontSize: '0.65rem', color: '#8b8ba7', marginTop: '2px' }}>Default: 1% of home value/yr</div>
+                </div>
+
+                {/* PMI Rate */}
+                <div style={s.inputGroup}>
+                  <label style={{ ...s.label, fontSize: '0.75rem' }}>
+                    PMI Rate (%)
+                    {customAssumptions.pmiRate !== 0.5 && <span style={{ color: '#fbbf24' }}> ★</span>}
+                  </label>
+                  <input
+                    type="number"
+                    step="0.05"
+                    style={{ ...s.input, fontSize: '0.9rem', padding: '10px' }}
+                    value={customAssumptions.pmiRate}
+                    onChange={e => setCustomAssumptions(prev => ({ ...prev, pmiRate: parseFloat(e.target.value) || 0 }))}
+                  />
+                  <div style={{ fontSize: '0.65rem', color: '#8b8ba7', marginTop: '2px' }}>Default: 0.5% (if LTV > 80%)</div>
+                </div>
+              </div>
+
+              <div style={{ 
+                marginTop: '16px', 
+                padding: '12px', 
+                background: 'rgba(59,130,246,0.1)', 
+                borderRadius: '8px',
+                border: '1px solid rgba(59,130,246,0.2)',
+                fontSize: '0.8rem',
+                color: '#8b8ba7'
+              }}>
+                <strong style={{ color: '#60a5fa' }}>💡 Tip:</strong> These assumptions are specific to San Francisco. 
+                If you're looking at other markets, adjust property tax rates, transfer taxes, etc. accordingly.
+                {assumptionsModified && (
+                  <div style={{ marginTop: '8px', color: '#fbbf24' }}>
+                    ⚠️ Custom assumptions are currently active. Calculations use your modified values.
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
         
         {/* CTA: Optimize & Compare */}
