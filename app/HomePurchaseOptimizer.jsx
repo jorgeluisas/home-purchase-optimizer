@@ -1710,6 +1710,14 @@ export default function HomePurchaseOptimizer() {
           </div>
         </div>
 
+        {/* Opportunity Cost Note */}
+        <div style={{ background: 'rgba(251,146,60,0.08)', border: '1px solid rgba(251,146,60,0.2)', borderRadius: '12px', padding: '14px 18px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '14px' }}>
+          <div style={{ fontSize: '1.2rem' }}>💰</div>
+          <div style={{ fontSize: '0.82rem', color: '#d0d0e0', lineHeight: '1.5' }}>
+            <strong style={{ color: '#fb923c' }}>Hidden cost:</strong> Your {fmt$(opt.totalDown)} down payment could earn ~{fmt$(opt.totalDown * (investmentReturn / 100))}/yr ({investmentReturn}% return) if invested instead. The optimizer accounts for this when comparing buying vs renting.
+          </div>
+        </div>
+
         {/* Payment Timing Calendar */}
         <div style={{ background: 'linear-gradient(135deg, rgba(139,92,246,0.1), rgba(59,130,246,0.1))', borderRadius: '12px', padding: '20px', marginBottom: '20px', border: '1px solid rgba(139,92,246,0.3)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
@@ -1968,6 +1976,9 @@ export default function HomePurchaseOptimizer() {
     };
     const comfort = getComfort(housingPctOfTakeHome);
 
+    // Opportunity cost of down payment
+    const annualOpportunityCost = opt.totalDown * (investmentReturn / 100);
+
     // Generate verdict
     const getVerdict = () => {
       if (advantage10 > 500000) return { emoji: '🎯', verdict: 'Strong Buy', color: '#22c55e', desc: 'Buying clearly wins financially' };
@@ -1994,30 +2005,37 @@ export default function HomePurchaseOptimizer() {
           <div style={{ fontSize: '2rem', fontWeight: '700', color: verdict.color, marginBottom: '4px' }}>{verdict.verdict}</div>
           <div style={{ fontSize: '1rem', color: '#c0c0d0', marginBottom: '16px' }}>{verdict.desc}</div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginTop: '16px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '10px', marginTop: '16px' }}>
             <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '10px', padding: '12px' }}>
-              <div style={{ fontSize: '0.7rem', color: '#8b8ba7', marginBottom: '4px' }}>10-Year Advantage</div>
-              <div style={{ fontSize: '1.1rem', fontWeight: '700', color: advantage10 >= 0 ? '#4ade80' : '#f87171' }}>
+              <div style={{ fontSize: '0.65rem', color: '#8b8ba7', marginBottom: '4px' }}>10-Year Advantage</div>
+              <div style={{ fontSize: '1rem', fontWeight: '700', color: advantage10 >= 0 ? '#4ade80' : '#f87171' }}>
                 {advantage10 >= 0 ? '+' : ''}{fmt$(advantage10)}
               </div>
             </div>
             <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '10px', padding: '12px' }}>
-              <div style={{ fontSize: '0.7rem', color: '#8b8ba7', marginBottom: '4px' }}>Monthly vs Rent</div>
-              <div style={{ fontSize: '1.1rem', fontWeight: '700', color: monthlyVsRent <= 0 ? '#4ade80' : '#f87171' }}>
+              <div style={{ fontSize: '0.65rem', color: '#8b8ba7', marginBottom: '4px' }}>Monthly vs Rent</div>
+              <div style={{ fontSize: '1rem', fontWeight: '700', color: monthlyVsRent <= 0 ? '#4ade80' : '#f87171' }}>
                 {monthlyVsRent > 0 ? '+' : ''}{fmt$(monthlyVsRent)}
               </div>
             </div>
             <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '10px', padding: '12px' }}>
-              <div style={{ fontSize: '0.7rem', color: '#8b8ba7', marginBottom: '4px' }}>Break-Even</div>
-              <div style={{ fontSize: '1.1rem', fontWeight: '700', color: '#fff' }}>
+              <div style={{ fontSize: '0.65rem', color: '#8b8ba7', marginBottom: '4px' }}>Break-Even</div>
+              <div style={{ fontSize: '1rem', fontWeight: '700', color: '#fff' }}>
                 {opt.breakEvenYear === 'Never' ? 'Never' : `Year ${opt.breakEvenYear}`}
               </div>
             </div>
             <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '10px', padding: '12px' }}>
-              <div style={{ fontSize: '0.7rem', color: '#8b8ba7', marginBottom: '4px' }}>Tax Savings</div>
-              <div style={{ fontSize: '1.1rem', fontWeight: '700', color: '#4ade80' }}>
+              <div style={{ fontSize: '0.65rem', color: '#8b8ba7', marginBottom: '4px' }}>Tax Savings</div>
+              <div style={{ fontSize: '1rem', fontWeight: '700', color: '#4ade80' }}>
                 {fmt$(opt.totalTaxBenefit)}/yr
               </div>
+            </div>
+            <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '10px', padding: '12px' }}>
+              <div style={{ fontSize: '0.65rem', color: '#8b8ba7', marginBottom: '4px' }}>Opportunity Cost</div>
+              <div style={{ fontSize: '1rem', fontWeight: '700', color: '#fb923c' }}>
+                {fmt$(annualOpportunityCost)}/yr
+              </div>
+              <div style={{ fontSize: '0.6rem', color: '#666', marginTop: '2px' }}>{fmt$(opt.totalDown)} at {investmentReturn}%</div>
             </div>
           </div>
           
