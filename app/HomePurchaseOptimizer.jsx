@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area, ComposedChart } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area, ComposedChart, ReferenceLine, Label } from 'recharts';
 
 // URL param mapping (short keys for cleaner URLs)
 const URL_PARAM_MAP = {
@@ -718,38 +718,253 @@ const fmtPct = (v) => `${((v || 0) * 100).toFixed(2)}%`;
 const fmtPctWhole = (v) => `${(v || 0).toFixed(0)}%`;
 const fmtNum = (v) => new Intl.NumberFormat('en-US').format(v || 0);
 
-// Input component with formatting
-const CurrencyInput = ({ value, onChange, label, min = 0, max = Infinity, style }) => {
+// Input component with formatting and validation
+const CurrencyInput = ({ value, onChange, label, min = 0, max = Infinity, style, error, onValidate }) => {
   const [focused, setFocused] = React.useState(false);
   const [tempValue, setTempValue] = React.useState('');
+  const [localError, setLocalError] = React.useState('');
 
   const handleFocus = () => {
     setFocused(true);
     setTempValue(value.toString());
+    setLocalError('');
   };
 
   const handleBlur = () => {
     setFocused(false);
-    const parsed = parseInt(tempValue.replace(/[^0-9.-]/g, ''), 10);
-    if (!isNaN(parsed)) {
-      const clamped = Math.max(min, Math.min(max, parsed));
-      onChange(clamped);
+    const cleanedValue = tempValue.replace(/[^0-9.-]/g, '');
+    const parsed = parseInt(cleanedValue, 10);
+    
+    if (cleanedValue === '' || isNaN(parsed)) {
+      setLocalError('Please enter a valid number');
+      if (onValidate) onValidate(false, 'Please enter a valid number');
+      return;
     }
+    
+    if (parsed < min) {
+      setLocalError(`Value cannot be less than ${fmtNum(min)}`);
+      if (onValidate) onValidate(false, `Value cannot be less than ${fmtNum(min)}`);
+      onChange(min); // Clamp to min
+      return;
+    }
+    
+    if (parsed > max) {
+      setLocalError(`Value cannot exceed ${fmtNum(max)}`);
+      if (onValidate) onValidate(false, `Value cannot exceed ${fmtNum(max)}`);
+      onChange(max); // Clamp to max
+      return;
+    }
+    
+    setLocalError('');
+    if (onValidate) onValidate(true, '');
+    onChange(parsed);
   };
 
   const handleChange = (e) => {
     setTempValue(e.target.value);
+    // Clear error while typing
+    if (localError) setLocalError('');
   };
 
+  const displayError = error || localError;
+  const hasError = !!displayError;
+
   return (
-    <input
-      type="text"
-      style={style}
-      value={focused ? tempValue : '$' + fmtNum(value)}
-      onChange={handleChange}
-      onFocus={handleFocus}
-      onBlur={handleBlur}
-    />
+    <div style={{ position: 'relative' }}>
+      <input
+        type="text"
+        style={{
+          ...style,
+          borderColor: hasError ? '#f87171' : style?.borderColor || 'rgba(255,255,255,0.1)',
+          boxShadow: hasError ? '0 0 0 2px rgba(248,113,113,0.2)' : 'none'
+        }}
+        value={focused ? tempValue : '$' + fmtNum(value)}
+        onChange={handleChange}
+        onFocus={handleFocus}
+        onBlur={handleBlur}
+      />
+      {hasError && (
+        <div style={{ 
+          color: '#f87171', 
+          fontSize: '0.75rem', 
+          marginTop: '4px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '4px'
+        }}>
+          <span>⚠</span> {displayError}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Number input component with validation (for rates/percentages)
+const NumberInput = ({ value, onChange, min = 0, max = Infinity, step = 1, style, error, onValidate }) => {
+  const [localError, setLocalError] = React.useState('');
+
+  const handleChange = (e) => {
+    const newValue = e.target.value;
+    
+    if (newValue === '') {
+      onChange(0);
+      return;
+    }
+    
+    const parsed = parseFloat(newValue);
+    
+    if (isNaN(parsed)) {
+      setLocalError('Please enter a valid number');
+      if (onValidate) onValidate(false, 'Please enter a valid number');
+      return;
+    }
+    
+    if (parsed < min) {
+      setLocalError(`Value cannot be less than ${min}`);
+      if (onValidate) onValidate(false, `Value cannot be less than ${min}`);
+      onChange(min);
+      return;
+    }
+    
+    if (parsed > max) {
+      setLocalError(`Value cannot exceed ${max}`);
+      if (onValidate) onValidate(false, `Value cannot exceed ${max}`);
+      onChange(max);
+      return;
+    }
+    
+    setLocalError('');
+    if (onValidate) onValidate(true, '');
+    onChange(parsed);
+  };
+
+  const displayError = error || localError;
+  const hasError = !!displayError;
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <input
+        type="number"
+        step={step}
+        style={{
+          ...style,
+          borderColor: hasError ? '#f87171' : style?.borderColor || 'rgba(255,255,255,0.1)',
+          boxShadow: hasError ? '0 0 0 2px rgba(248,113,113,0.2)' : 'none'
+        }}
+        value={value}
+        onChange={handleChange}
+        min={min}
+        max={max}
+      />
+      {hasError && (
+        <div style={{ 
+          color: '#f87171', 
+          fontSize: '0.75rem', 
+          marginTop: '4px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '4px'
+        }}>
+          <span>⚠</span> {displayError}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Scenario Presets
+const SCENARIO_PRESETS = {
+  conservative: {
+    name: 'Conservative',
+    emoji: '🛡️',
+    description: 'Lower leverage, higher safety margins, traditional financing',
+    color: '#4ade80',
+    settings: {
+      manualDpPct: 30,
+      manualMarginPct: 0,
+      manualHelocPct: 0,
+      mortgageRate: 7.0,    // Assume slightly higher rate
+      marginRate: 7.0,
+      helocRate: 9.0,
+      investmentReturn: 6,  // Conservative returns
+      homeAppreciation: 3,  // Conservative appreciation
+      rentGrowth: 3,
+    }
+  },
+  balanced: {
+    name: 'Balanced',
+    emoji: '⚖️',
+    description: 'Moderate leverage, realistic assumptions, some optimization',
+    color: '#60a5fa',
+    settings: {
+      manualDpPct: 25,
+      manualMarginPct: 10,
+      manualHelocPct: 0,
+      mortgageRate: 6.5,
+      marginRate: 6.5,
+      helocRate: 8.5,
+      investmentReturn: 8,
+      homeAppreciation: 5,
+      rentGrowth: 3,
+    }
+  },
+  aggressive: {
+    name: 'Aggressive',
+    emoji: '🚀',
+    description: 'Maximum tax optimization, higher leverage, all tools utilized',
+    color: '#f97316',
+    settings: {
+      manualDpPct: 20,
+      manualMarginPct: 20,
+      manualHelocPct: 50,   // Only applies if buying with cash
+      mortgageRate: 6.5,
+      marginRate: 6.0,      // Assume better rates
+      helocRate: 8.0,
+      investmentReturn: 10, // Optimistic returns
+      homeAppreciation: 6,  // Optimistic appreciation
+      rentGrowth: 4,
+    }
+  }
+};
+
+// Preset Selector Component
+const PresetSelector = ({ onSelect, activePreset }) => {
+  return (
+    <div style={{ marginBottom: '16px' }}>
+      <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '1.5px', color: '#8b8ba7', marginBottom: '10px', fontWeight: '600' }}>
+        Quick Start Presets
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
+        {Object.entries(SCENARIO_PRESETS).map(([key, preset]) => (
+          <button
+            key={key}
+            onClick={() => onSelect(key)}
+            style={{
+              padding: '12px 8px',
+              borderRadius: '10px',
+              border: activePreset === key ? `2px solid ${preset.color}` : '1px solid rgba(255,255,255,0.1)',
+              background: activePreset === key ? `${preset.color}20` : 'rgba(255,255,255,0.03)',
+              cursor: 'pointer',
+              transition: 'all 0.2s',
+              textAlign: 'center',
+            }}
+          >
+            <div style={{ fontSize: '1.3rem', marginBottom: '4px' }}>{preset.emoji}</div>
+            <div style={{ 
+              fontSize: '0.8rem', 
+              fontWeight: '600', 
+              color: activePreset === key ? preset.color : '#d0d0e0',
+              marginBottom: '2px' 
+            }}>
+              {preset.name}
+            </div>
+            <div style={{ fontSize: '0.65rem', color: '#8b8ba7', lineHeight: '1.3' }}>
+              {preset.description.split(',')[0]}
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
   );
 };
 
@@ -791,11 +1006,103 @@ export default function HomePurchaseOptimizer() {
   // CTA-related state
   const [showSensitivity, setShowSensitivity] = useState(false);
 
+  // Preset state
+  const [activePreset, setActivePreset] = useState(null);
+
+  // Expert/Quick Mode state
+  const [isExpertMode, setIsExpertMode] = useState(true);
+
+  // Custom assumptions state (editable SF constants)
+  const [customAssumptions, setCustomAssumptions] = useState({
+    propTaxRate: 1.18,      // % (SF default)
+    transferTax: 0.68,      // % (SF default)
+    parcelTax: 350,         // $ annual
+    realtorComm: 5,         // %
+    closeBuy: 1.5,          // %
+    closeSell: 1,           // %
+    insuranceRate: 0.35,    // %
+    maintenanceRate: 1,     // %
+    pmiRate: 0.5,           // %
+  });
+  const [showAssumptions, setShowAssumptions] = useState(false);
+  
+  // Check if assumptions have been modified from defaults
+  const assumptionsModified = useMemo(() => {
+    const defaults = {
+      propTaxRate: 1.18, transferTax: 0.68, parcelTax: 350,
+      realtorComm: 5, closeBuy: 1.5, closeSell: 1,
+      insuranceRate: 0.35, maintenanceRate: 1, pmiRate: 0.5
+    };
+    return Object.keys(defaults).some(k => customAssumptions[k] !== defaults[k]);
+  }, [customAssumptions]);
+
+  // Reset assumptions to defaults
+  const resetAssumptions = useCallback(() => {
+    setCustomAssumptions({
+      propTaxRate: 1.18, transferTax: 0.68, parcelTax: 350,
+      realtorComm: 5, closeBuy: 1.5, closeSell: 1,
+      insuranceRate: 0.35, maintenanceRate: 1, pmiRate: 0.5
+    });
+  }, []);
+
+  // Apply preset function
+  const applyPreset = useCallback((presetKey) => {
+    const preset = SCENARIO_PRESETS[presetKey];
+    if (!preset) return;
+    
+    const { settings } = preset;
+    
+    // Apply manual mode settings
+    if (settings.manualDpPct !== undefined) setManualDpPct(settings.manualDpPct);
+    if (settings.manualMarginPct !== undefined) setManualMarginPct(settings.manualMarginPct);
+    if (settings.manualHelocPct !== undefined) setManualHelocPct(settings.manualHelocPct);
+    
+    // Apply rate settings
+    if (settings.mortgageRate !== undefined) setMortgageRate(settings.mortgageRate);
+    if (settings.marginRate !== undefined) setMarginRate(settings.marginRate);
+    if (settings.helocRate !== undefined) setHelocRate(settings.helocRate);
+    
+    // Apply assumption settings
+    if (settings.investmentReturn !== undefined) setInvestmentReturn(settings.investmentReturn);
+    if (settings.homeAppreciation !== undefined) setHomeAppreciation(settings.homeAppreciation);
+    if (settings.rentGrowth !== undefined) setRentGrowth(settings.rentGrowth);
+    
+    // Track the active preset
+    setActivePreset(presetKey);
+    
+    // Navigate to Build Your Own tab to show the settings
+    setActiveTab('manual');
+  }, []);
+
   // Scenario comparison state
   const [scenarios, setScenarios] = useState([
     { id: 1, name: 'Scenario A', dpPct: 20, mortgageRate: 6.5, marginPct: 0, helocPct: 0 },
     { id: 2, name: 'Scenario B', dpPct: 30, mortgageRate: 6.5, marginPct: 15, helocPct: 0 },
   ]);
+
+  // Input validation state
+  const [validationErrors, setValidationErrors] = useState({});
+  
+  // Check if form is valid (no errors and all required fields have positive values where needed)
+  const isFormValid = useMemo(() => {
+    const hasErrors = Object.values(validationErrors).some(err => !!err);
+    if (hasErrors) return false;
+    
+    // Check that critical values are positive
+    if (homePrice <= 0) return false;
+    if (grossIncome <= 0) return false;
+    if (mortgageRate <= 0 || mortgageRate > 20) return false;
+    
+    return true;
+  }, [validationErrors, homePrice, grossIncome, mortgageRate]);
+
+  // Validation helper
+  const setFieldError = useCallback((field, error) => {
+    setValidationErrors(prev => ({
+      ...prev,
+      [field]: error
+    }));
+  }, []);
 
   // URL state persistence
   const searchParams = useSearchParams();
@@ -1702,6 +2009,121 @@ export default function HomePurchaseOptimizer() {
           </div>
         </div>
 
+        {/* DOWNSIDE RISK VISUALIZATION */}
+        <div style={{
+          background: 'linear-gradient(135deg, rgba(248,113,113,0.1), rgba(239,68,68,0.05))',
+          borderRadius: '16px',
+          padding: '20px 24px',
+          border: '1px solid rgba(248,113,113,0.3)',
+          marginBottom: '24px'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
+            <span style={{ fontSize: '1.5rem' }}>⚠️</span>
+            <div>
+              <div style={{ color: '#f87171', fontWeight: '600', fontSize: '1rem' }}>Downside Scenario Analysis</div>
+              <div style={{ color: '#8b8ba7', fontSize: '0.8rem' }}>What if things go wrong?</div>
+            </div>
+          </div>
+          
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '16px' }}>
+            {/* Market Down 20% */}
+            <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '10px', padding: '14px' }}>
+              <div style={{ fontSize: '0.7rem', color: '#8b8ba7', textTransform: 'uppercase', marginBottom: '6px' }}>Portfolio -20%</div>
+              <div style={{ fontSize: '1.1rem', fontWeight: '600', color: '#f87171' }}>{fmt$(stockPortfolio * 0.8)}</div>
+              <div style={{ fontSize: '0.75rem', color: '#8b8ba7', marginTop: '4px' }}>
+                Loss: {fmt$(stockPortfolio * 0.2)}
+              </div>
+            </div>
+            
+            {/* Home Value Stagnant */}
+            <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '10px', padding: '14px' }}>
+              <div style={{ fontSize: '0.7rem', color: '#8b8ba7', textTransform: 'uppercase', marginBottom: '6px' }}>Home 0% Growth (5yr)</div>
+              <div style={{ fontSize: '1.1rem', fontWeight: '600', color: '#fbbf24' }}>{fmt$(homePrice)}</div>
+              <div style={{ fontSize: '0.75rem', color: '#8b8ba7', marginTop: '4px' }}>
+                vs {fmt$(homePrice * Math.pow(1.05, 5))} at 5%
+              </div>
+            </div>
+            
+            {/* Higher Rates */}
+            <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '10px', padding: '14px' }}>
+              <div style={{ fontSize: '0.7rem', color: '#8b8ba7', textTransform: 'uppercase', marginBottom: '6px' }}>Rates +200bps</div>
+              <div style={{ fontSize: '1.1rem', fontWeight: '600', color: '#fb923c' }}>{(mortgageRate + 2).toFixed(1)}%</div>
+              <div style={{ fontSize: '0.75rem', color: '#8b8ba7', marginTop: '4px' }}>
+                HELOC: {(helocRate + 2).toFixed(1)}%
+              </div>
+            </div>
+          </div>
+          
+          {/* Margin Call Risk */}
+          {opt.marginLoan > 0 && (
+            <div style={{
+              background: 'rgba(248,113,113,0.15)',
+              borderRadius: '10px',
+              padding: '14px',
+              marginBottom: '12px',
+              border: '1px solid rgba(248,113,113,0.3)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                <span style={{ fontSize: '1.1rem' }}>📉</span>
+                <span style={{ color: '#f87171', fontWeight: '600', fontSize: '0.9rem' }}>Margin Call Risk</span>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', fontSize: '0.85rem' }}>
+                <div>
+                  <div style={{ color: '#8b8ba7', marginBottom: '2px' }}>Current Margin Used</div>
+                  <div style={{ color: '#fff', fontWeight: '500' }}>{fmtPctWhole((opt.marginLoan / stockPortfolio) * 100)} ({fmt$(opt.marginLoan)})</div>
+                </div>
+                <div>
+                  <div style={{ color: '#8b8ba7', marginBottom: '2px' }}>Margin Call Threshold</div>
+                  <div style={{ color: '#fbbf24', fontWeight: '500' }}>~30% of portfolio</div>
+                </div>
+                <div>
+                  <div style={{ color: '#8b8ba7', marginBottom: '2px' }}>Portfolio Drop to Trigger</div>
+                  <div style={{ color: '#f87171', fontWeight: '500' }}>
+                    {stockPortfolio * 0.3 > opt.marginLoan 
+                      ? `>${fmtPctWhole(((stockPortfolio - (opt.marginLoan / 0.3)) / stockPortfolio) * 100)} drop`
+                      : 'Already at risk!'
+                    }
+                  </div>
+                </div>
+              </div>
+              {stockPortfolio * 0.3 > opt.marginLoan && (
+                <div style={{ marginTop: '10px', fontSize: '0.8rem', color: '#d0d0e0' }}>
+                  💡 Keep ~{fmt$(opt.marginLoan * 0.3)} in cash reserves to cover potential margin calls
+                </div>
+              )}
+            </div>
+          )}
+          
+          {/* Buy vs Rent Downside Comparison */}
+          <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '10px', padding: '14px' }}>
+            <div style={{ fontSize: '0.85rem', color: '#8b8ba7', fontWeight: '600', marginBottom: '10px' }}>Downside Comparison: Buy vs Rent</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+              <div>
+                <div style={{ color: '#f87171', fontWeight: '500', marginBottom: '6px' }}>If You Buy (Downside)</div>
+                <ul style={{ margin: 0, paddingLeft: '16px', color: '#c0c0d0', fontSize: '0.8rem', lineHeight: '1.6' }}>
+                  <li>Underwater mortgage if home drops 20%+</li>
+                  <li>Can't easily move for job opportunities</li>
+                  <li>Maintenance costs don't go away</li>
+                  {opt.marginLoan > 0 && <li>Margin call risk if market tanks</li>}
+                </ul>
+              </div>
+              <div>
+                <div style={{ color: '#60a5fa', fontWeight: '500', marginBottom: '6px' }}>If You Rent (Downside)</div>
+                <ul style={{ margin: 0, paddingLeft: '16px', color: '#c0c0d0', fontSize: '0.8rem', lineHeight: '1.6' }}>
+                  <li>Portfolio drops 20% = {fmt$(stockPortfolio * 0.2)} loss</li>
+                  <li>Rent increases ({rentGrowth}%/yr compounds)</li>
+                  <li>Landlord could sell/evict you</li>
+                  <li>No equity building</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+          
+          <div style={{ marginTop: '12px', fontSize: '0.8rem', color: '#8b8ba7', fontStyle: 'italic' }}>
+            💡 Both paths have risks. Buying locks in housing costs but ties up capital. Renting maintains flexibility but exposes you to rent increases.
+          </div>
+        </div>
+
         {/* Diagnostics - why certain strategies may not appear */}
         {diag && !optimizationResult.canBuyCash && (
           <div style={s.warning}>
@@ -1968,8 +2390,35 @@ export default function HomePurchaseOptimizer() {
     
     return (
       <>
-        <InfoBox title="Manual Mode" isOpen={openInfoBoxes['manual']} onToggle={() => toggleInfo('manual')}>
-          <p>Use sliders to test any combination. HELOC requires buying outright (set down payment to 100% or ensure cash + margin ≥ home price).</p>
+        {/* Scenario Presets */}
+        <div style={s.card}>
+          <PresetSelector onSelect={applyPreset} activePreset={activePreset} />
+          
+          {activePreset && (
+            <div style={{
+              marginTop: '12px',
+              padding: '12px 14px',
+              borderRadius: '8px',
+              background: `${SCENARIO_PRESETS[activePreset].color}15`,
+              border: `1px solid ${SCENARIO_PRESETS[activePreset].color}40`,
+              fontSize: '0.85rem',
+              color: '#d0d0e0'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                <span>{SCENARIO_PRESETS[activePreset].emoji}</span>
+                <span style={{ fontWeight: '600', color: SCENARIO_PRESETS[activePreset].color }}>
+                  {SCENARIO_PRESETS[activePreset].name} Preset Applied
+                </span>
+              </div>
+              <div style={{ fontSize: '0.8rem', color: '#8b8ba7' }}>
+                {SCENARIO_PRESETS[activePreset].description}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <InfoBox title="Build Your Own Strategy" isOpen={openInfoBoxes['manual']} onToggle={() => toggleInfo('manual')}>
+          <p>Use sliders to test any combination. Start with a preset above, then customize as needed. HELOC requires buying outright (set down payment to 100% or ensure cash + margin ≥ home price).</p>
         </InfoBox>
 
         {/* Educational Info Boxes */}
@@ -2018,18 +2467,18 @@ export default function HomePurchaseOptimizer() {
           
           <div style={s.inputGroup}>
             <label style={s.label}>Down Payment: {manualDpPct}% ({fmt$(homePrice * manualDpPct / 100)})</label>
-            <input type="range" min="10" max="100" value={manualDpPct} onChange={e => setManualDpPct(Number(e.target.value))} style={s.slider} />
+            <input type="range" min="10" max="100" value={manualDpPct} onChange={e => { setManualDpPct(Number(e.target.value)); setActivePreset(null); }} style={s.slider} />
           </div>
           
           <div style={s.inputGroup}>
             <label style={s.label}>Margin Loan: {manualMarginPct}% of portfolio ({fmt$(stockPortfolio * manualMarginPct / 100)})</label>
-            <input type="range" min="0" max="30" value={manualMarginPct} onChange={e => setManualMarginPct(Number(e.target.value))} style={s.slider} />
+            <input type="range" min="0" max="30" value={manualMarginPct} onChange={e => { setManualMarginPct(Number(e.target.value)); setActivePreset(null); }} style={s.slider} />
             {manualMarginPct > 25 && <div style={{ color: '#fbbf24', fontSize: '0.8rem', marginTop: '4px' }}>⚠️ High margin ({'>'}25%) increases margin call risk</div>}
           </div>
           
           <div style={s.inputGroup}>
             <label style={s.label}>HELOC: {manualHelocPct}% of home ({fmt$(homePrice * manualHelocPct / 100)})</label>
-            <input type="range" min="0" max="80" value={manualHelocPct} onChange={e => setManualHelocPct(Number(e.target.value))} style={s.slider} disabled={!canManualHELOC} />
+            <input type="range" min="0" max="80" value={manualHelocPct} onChange={e => { setManualHelocPct(Number(e.target.value)); setActivePreset(null); }} style={s.slider} disabled={!canManualHELOC} />
             {!canManualHELOC && manualHelocPct === 0 && (
               <div style={{ color: '#8b8ba7', fontSize: '0.8rem', marginTop: '4px' }}>
                 HELOC requires cash + margin ≥ home price. Currently: {fmt$(manualScenario.cashDown + (stockPortfolio * manualMarginPct / 100))} vs {fmt$(homePrice)} needed
@@ -2094,6 +2543,225 @@ export default function HomePurchaseOptimizer() {
               <div style={{ ...s.costLine, fontWeight: '600' }}><span>Total tax benefit:</span><span style={{ color: '#4ade80' }}>{fmt$(sc.totalTaxBenefit)}/yr</span></div>
             </div>
           </div>
+        </div>
+        
+        {/* Edit Assumptions Section */}
+        <div style={{
+          ...s.card,
+          background: assumptionsModified ? 'rgba(251,191,36,0.05)' : 'rgba(255,255,255,0.02)',
+          border: assumptionsModified ? '1px solid rgba(251,191,36,0.3)' : '1px solid rgba(255,255,255,0.06)'
+        }}>
+          <div 
+            onClick={() => setShowAssumptions(!showAssumptions)}
+            style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'space-between', 
+              cursor: 'pointer',
+              padding: '4px 0'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span style={{ fontSize: '1.2rem' }}>⚙️</span>
+              <div>
+                <h3 style={{ ...s.section, marginTop: 0, marginBottom: '4px' }}>Edit Assumptions</h3>
+                <div style={{ fontSize: '0.8rem', color: assumptionsModified ? '#fbbf24' : '#8b8ba7' }}>
+                  {assumptionsModified ? '⚠️ Custom values active' : 'SF defaults (click to customize)'}
+                </div>
+              </div>
+            </div>
+            <span style={{ color: '#8b8ba7', fontSize: '1.2rem' }}>{showAssumptions ? '▼' : '▶'}</span>
+          </div>
+          
+          {showAssumptions && (
+            <div style={{ marginTop: '20px' }}>
+              {/* Reset Button */}
+              {assumptionsModified && (
+                <button
+                  onClick={resetAssumptions}
+                  style={{
+                    marginBottom: '16px',
+                    padding: '8px 16px',
+                    borderRadius: '8px',
+                    border: '1px solid rgba(251,191,36,0.4)',
+                    background: 'rgba(251,191,36,0.1)',
+                    color: '#fbbf24',
+                    fontSize: '0.85rem',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
+                >
+                  🔄 Reset to SF Defaults
+                </button>
+              )}
+              
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
+                {/* Property Tax Rate */}
+                <div style={s.inputGroup}>
+                  <label style={{ ...s.label, fontSize: '0.75rem' }}>
+                    Property Tax Rate (%)
+                    {customAssumptions.propTaxRate !== 1.18 && <span style={{ color: '#fbbf24' }}> ★</span>}
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    style={{ ...s.input, fontSize: '0.9rem', padding: '10px' }}
+                    value={customAssumptions.propTaxRate}
+                    onChange={e => setCustomAssumptions(prev => ({ ...prev, propTaxRate: parseFloat(e.target.value) || 0 }))}
+                  />
+                  <div style={{ fontSize: '0.65rem', color: '#8b8ba7', marginTop: '2px' }}>SF default: 1.18%</div>
+                </div>
+
+                {/* Transfer Tax */}
+                <div style={s.inputGroup}>
+                  <label style={{ ...s.label, fontSize: '0.75rem' }}>
+                    Transfer Tax (%)
+                    {customAssumptions.transferTax !== 0.68 && <span style={{ color: '#fbbf24' }}> ★</span>}
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    style={{ ...s.input, fontSize: '0.9rem', padding: '10px' }}
+                    value={customAssumptions.transferTax}
+                    onChange={e => setCustomAssumptions(prev => ({ ...prev, transferTax: parseFloat(e.target.value) || 0 }))}
+                  />
+                  <div style={{ fontSize: '0.65rem', color: '#8b8ba7', marginTop: '2px' }}>SF default: 0.68%</div>
+                </div>
+
+                {/* Parcel Tax */}
+                <div style={s.inputGroup}>
+                  <label style={{ ...s.label, fontSize: '0.75rem' }}>
+                    Annual Parcel Tax ($)
+                    {customAssumptions.parcelTax !== 350 && <span style={{ color: '#fbbf24' }}> ★</span>}
+                  </label>
+                  <input
+                    type="number"
+                    step="10"
+                    style={{ ...s.input, fontSize: '0.9rem', padding: '10px' }}
+                    value={customAssumptions.parcelTax}
+                    onChange={e => setCustomAssumptions(prev => ({ ...prev, parcelTax: parseFloat(e.target.value) || 0 }))}
+                  />
+                  <div style={{ fontSize: '0.65rem', color: '#8b8ba7', marginTop: '2px' }}>SF default: $350</div>
+                </div>
+
+                {/* Realtor Commission */}
+                <div style={s.inputGroup}>
+                  <label style={{ ...s.label, fontSize: '0.75rem' }}>
+                    Realtor Commission (%)
+                    {customAssumptions.realtorComm !== 5 && <span style={{ color: '#fbbf24' }}> ★</span>}
+                  </label>
+                  <input
+                    type="number"
+                    step="0.25"
+                    style={{ ...s.input, fontSize: '0.9rem', padding: '10px' }}
+                    value={customAssumptions.realtorComm}
+                    onChange={e => setCustomAssumptions(prev => ({ ...prev, realtorComm: parseFloat(e.target.value) || 0 }))}
+                  />
+                  <div style={{ fontSize: '0.65rem', color: '#8b8ba7', marginTop: '2px' }}>Default: 5% (seller pays)</div>
+                </div>
+
+                {/* Closing Costs - Buy */}
+                <div style={s.inputGroup}>
+                  <label style={{ ...s.label, fontSize: '0.75rem' }}>
+                    Buyer Closing Costs (%)
+                    {customAssumptions.closeBuy !== 1.5 && <span style={{ color: '#fbbf24' }}> ★</span>}
+                  </label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    style={{ ...s.input, fontSize: '0.9rem', padding: '10px' }}
+                    value={customAssumptions.closeBuy}
+                    onChange={e => setCustomAssumptions(prev => ({ ...prev, closeBuy: parseFloat(e.target.value) || 0 }))}
+                  />
+                  <div style={{ fontSize: '0.65rem', color: '#8b8ba7', marginTop: '2px' }}>Default: 1.5%</div>
+                </div>
+
+                {/* Closing Costs - Sell */}
+                <div style={s.inputGroup}>
+                  <label style={{ ...s.label, fontSize: '0.75rem' }}>
+                    Seller Closing Costs (%)
+                    {customAssumptions.closeSell !== 1 && <span style={{ color: '#fbbf24' }}> ★</span>}
+                  </label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    style={{ ...s.input, fontSize: '0.9rem', padding: '10px' }}
+                    value={customAssumptions.closeSell}
+                    onChange={e => setCustomAssumptions(prev => ({ ...prev, closeSell: parseFloat(e.target.value) || 0 }))}
+                  />
+                  <div style={{ fontSize: '0.65rem', color: '#8b8ba7', marginTop: '2px' }}>Default: 1%</div>
+                </div>
+
+                {/* Insurance Rate */}
+                <div style={s.inputGroup}>
+                  <label style={{ ...s.label, fontSize: '0.75rem' }}>
+                    Insurance Rate (%)
+                    {customAssumptions.insuranceRate !== 0.35 && <span style={{ color: '#fbbf24' }}> ★</span>}
+                  </label>
+                  <input
+                    type="number"
+                    step="0.05"
+                    style={{ ...s.input, fontSize: '0.9rem', padding: '10px' }}
+                    value={customAssumptions.insuranceRate}
+                    onChange={e => setCustomAssumptions(prev => ({ ...prev, insuranceRate: parseFloat(e.target.value) || 0 }))}
+                  />
+                  <div style={{ fontSize: '0.65rem', color: '#8b8ba7', marginTop: '2px' }}>Default: 0.35%</div>
+                </div>
+
+                {/* Maintenance Rate */}
+                <div style={s.inputGroup}>
+                  <label style={{ ...s.label, fontSize: '0.75rem' }}>
+                    Maintenance Rate (%)
+                    {customAssumptions.maintenanceRate !== 1 && <span style={{ color: '#fbbf24' }}> ★</span>}
+                  </label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    style={{ ...s.input, fontSize: '0.9rem', padding: '10px' }}
+                    value={customAssumptions.maintenanceRate}
+                    onChange={e => setCustomAssumptions(prev => ({ ...prev, maintenanceRate: parseFloat(e.target.value) || 0 }))}
+                  />
+                  <div style={{ fontSize: '0.65rem', color: '#8b8ba7', marginTop: '2px' }}>Default: 1% of home value/yr</div>
+                </div>
+
+                {/* PMI Rate */}
+                <div style={s.inputGroup}>
+                  <label style={{ ...s.label, fontSize: '0.75rem' }}>
+                    PMI Rate (%)
+                    {customAssumptions.pmiRate !== 0.5 && <span style={{ color: '#fbbf24' }}> ★</span>}
+                  </label>
+                  <input
+                    type="number"
+                    step="0.05"
+                    style={{ ...s.input, fontSize: '0.9rem', padding: '10px' }}
+                    value={customAssumptions.pmiRate}
+                    onChange={e => setCustomAssumptions(prev => ({ ...prev, pmiRate: parseFloat(e.target.value) || 0 }))}
+                  />
+                  <div style={{ fontSize: '0.65rem', color: '#8b8ba7', marginTop: '2px' }}>Default: 0.5% (if LTV > 80%)</div>
+                </div>
+              </div>
+
+              <div style={{ 
+                marginTop: '16px', 
+                padding: '12px', 
+                background: 'rgba(59,130,246,0.1)', 
+                borderRadius: '8px',
+                border: '1px solid rgba(59,130,246,0.2)',
+                fontSize: '0.8rem',
+                color: '#8b8ba7'
+              }}>
+                <strong style={{ color: '#60a5fa' }}>💡 Tip:</strong> These assumptions are specific to San Francisco. 
+                If you're looking at other markets, adjust property tax rates, transfer taxes, etc. accordingly.
+                {assumptionsModified && (
+                  <div style={{ marginTop: '8px', color: '#fbbf24' }}>
+                    ⚠️ Custom assumptions are currently active. Calculations use your modified values.
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
         
         {/* CTA: Optimize & Compare */}
@@ -2341,19 +3009,104 @@ export default function HomePurchaseOptimizer() {
         
         <div style={s.card}>
           <h3 style={{ ...s.section, marginTop: 0 }}>Wealth: Own vs. Rent + Invest</h3>
-          <div style={s.chart}>
+          
+          {/* Chart Legend with Annotations */}
+          <div style={{ display: 'flex', gap: '16px', marginBottom: '12px', flexWrap: 'wrap', fontSize: '0.75rem' }}>
+            {opt.breakEvenYear !== 'Never' && opt.breakEvenYear <= 30 && (
+              <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ width: '20px', height: '2px', background: '#22c55e', display: 'inline-block' }}></span>
+                <span style={{ color: '#22c55e' }}>Break-even Year {opt.breakEvenYear}</span>
+              </span>
+            )}
+            <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ width: '20px', height: '2px', background: 'rgba(167,139,250,0.5)', borderStyle: 'dashed', display: 'inline-block' }}></span>
+              <span style={{ color: '#a78bfa' }}>Milestones (10/20/30 yr)</span>
+            </span>
+          </div>
+          
+          <div style={{ ...s.chart, height: '380px' }}>
             <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={opt.yearlyAnalysis}>
+              <ComposedChart data={opt.yearlyAnalysis} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
                 <XAxis dataKey="year" stroke="#8b8ba7" tick={{fill:'#8b8ba7'}} />
                 <YAxis stroke="#8b8ba7" tick={{fill:'#8b8ba7'}} tickFormatter={v=>`$${(v/1000000).toFixed(1)}M`} />
                 <Tooltip contentStyle={{background:'#1a1a2e',border:'1px solid rgba(255,255,255,0.1)',borderRadius:'8px'}} formatter={v=>fmt$(v)} labelFormatter={l=>`Year ${l}`} />
                 <Legend />
+                
+                {/* Break-even vertical line */}
+                {opt.breakEvenYear !== 'Never' && opt.breakEvenYear <= 30 && (
+                  <ReferenceLine 
+                    x={opt.breakEvenYear} 
+                    stroke="#22c55e" 
+                    strokeWidth={2}
+                    strokeDasharray="5 5"
+                  >
+                    <Label 
+                      value={`Break-even: Year ${opt.breakEvenYear}`} 
+                      position="top" 
+                      fill="#22c55e"
+                      fontSize={11}
+                      fontWeight={600}
+                    />
+                  </ReferenceLine>
+                )}
+                
+                {/* 10-year milestone */}
+                <ReferenceLine 
+                  x={10} 
+                  stroke="rgba(167,139,250,0.4)" 
+                  strokeDasharray="3 3"
+                >
+                  <Label value="10yr" position="bottom" fill="#a78bfa" fontSize={10} />
+                </ReferenceLine>
+                
+                {/* 20-year milestone */}
+                <ReferenceLine 
+                  x={20} 
+                  stroke="rgba(167,139,250,0.4)" 
+                  strokeDasharray="3 3"
+                >
+                  <Label value="20yr" position="bottom" fill="#a78bfa" fontSize={10} />
+                </ReferenceLine>
+                
+                {/* 30-year milestone */}
+                <ReferenceLine 
+                  x={30} 
+                  stroke="rgba(167,139,250,0.4)" 
+                  strokeDasharray="3 3"
+                >
+                  <Label value="30yr" position="bottom" fill="#a78bfa" fontSize={10} />
+                </ReferenceLine>
+                
                 <Line type="monotone" dataKey="ownerWealth" name="Own (equity - sell costs)" stroke="#f97316" strokeWidth={3} dot={false} />
                 <Line type="monotone" dataKey="renterWealth" name="Rent + Invest" stroke="#60a5fa" strokeWidth={3} dot={false} />
               </ComposedChart>
             </ResponsiveContainer>
           </div>
+          
+          {/* Break-even callout */}
+          {opt.breakEvenYear !== 'Never' && opt.breakEvenYear <= 30 && (
+            <div style={{
+              marginTop: '12px',
+              padding: '12px 16px',
+              background: 'rgba(34,197,94,0.1)',
+              border: '1px solid rgba(34,197,94,0.3)',
+              borderRadius: '8px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px'
+            }}>
+              <span style={{ fontSize: '1.5rem' }}>📍</span>
+              <div>
+                <div style={{ color: '#22c55e', fontWeight: '600', fontSize: '0.9rem' }}>
+                  Break-even at Year {opt.breakEvenYear}
+                </div>
+                <div style={{ color: '#8b8ba7', fontSize: '0.8rem' }}>
+                  After this point, buying puts you ahead of renting + investing
+                </div>
+              </div>
+            </div>
+          )}
         </div>
         
         <div style={s.card}>
@@ -3106,6 +3859,452 @@ export default function HomePurchaseOptimizer() {
     );
   };
 
+  // Sensitivity Analysis Tab
+  const renderSensitivity = () => {
+    const opt = optimizationResult?.optimal;
+    if (!opt) {
+      return (
+        <div style={{ textAlign: 'center', padding: '60px 40px' }}>
+          <div style={{ fontSize: '4rem', marginBottom: '20px' }}>📊</div>
+          <h2 style={{ fontSize: '1.5rem', fontWeight: '500', marginBottom: '16px', color: '#fff' }}>Run Optimization First</h2>
+          <p style={{ color: '#8b8ba7', marginBottom: '32px' }}>
+            Sensitivity analysis shows how changes in assumptions affect your break-even year.
+          </p>
+          <button style={{ ...s.btn, width: 'auto', padding: '16px 48px' }} onClick={handleOptimize}>🚀 Run Optimization</button>
+        </div>
+      );
+    }
+
+    // Calculate sensitivity scenarios
+    const baseBreakEven = opt.breakEvenYear === 'Never' ? 31 : opt.breakEvenYear;
+    
+    // Generate scenarios for 3x3 matrix (Home Appreciation vs Investment Return)
+    const appreciationRange = [homeAppreciation - 2, homeAppreciation, homeAppreciation + 2];
+    const returnRange = [investmentReturn - 2, investmentReturn, investmentReturn + 2];
+    
+    // Calculate break-even for each scenario
+    const calculateBreakEven = (appRate, invReturn) => {
+      const scenario = calcScenario({
+        homePrice,
+        cashDown: opt.cashDown,
+        marginLoan: opt.marginLoan,
+        helocAmount: opt.helocAmount,
+        mortgageRate: mortgageRate / 100,
+        loanTerm,
+        appreciationRate: appRate / 100,
+        investmentReturn: invReturn / 100,
+        dividendYield: dividendYield / 100,
+        monthlyRent,
+        rentGrowthRate: rentGrowth / 100,
+        marginRate: marginRate / 100,
+        helocRate: helocRate / 100,
+        fedRate,
+        caRate,
+        stateTax,
+        stdDeduction,
+        filingStatus,
+        grossIncome
+      });
+      return scenario.breakEvenYear === 'Never' ? 31 : scenario.breakEvenYear;
+    };
+
+    // Generate matrix data
+    const matrix = appreciationRange.map(appRate => 
+      returnRange.map(invReturn => ({
+        appRate,
+        invReturn,
+        breakEven: calculateBreakEven(appRate, invReturn)
+      }))
+    );
+
+    // Calculate sensitivity (impact of each variable)
+    const sensitivities = [
+      {
+        variable: 'Home Appreciation',
+        icon: '🏠',
+        lowValue: homeAppreciation - 2,
+        baseValue: homeAppreciation,
+        highValue: homeAppreciation + 2,
+        lowBreakEven: calculateBreakEven(homeAppreciation - 2, investmentReturn),
+        highBreakEven: calculateBreakEven(homeAppreciation + 2, investmentReturn),
+        unit: '%'
+      },
+      {
+        variable: 'Investment Return',
+        icon: '📈',
+        lowValue: investmentReturn - 2,
+        baseValue: investmentReturn,
+        highValue: investmentReturn + 2,
+        lowBreakEven: calculateBreakEven(homeAppreciation, investmentReturn - 2),
+        highBreakEven: calculateBreakEven(homeAppreciation, investmentReturn + 2),
+        unit: '%'
+      },
+      {
+        variable: 'Mortgage Rate',
+        icon: '🏦',
+        lowValue: mortgageRate - 1,
+        baseValue: mortgageRate,
+        highValue: mortgageRate + 1,
+        lowBreakEven: (() => {
+          const scenario = calcScenario({
+            ...opt,
+            homePrice,
+            cashDown: opt.cashDown,
+            marginLoan: opt.marginLoan,
+            helocAmount: opt.helocAmount,
+            mortgageRate: (mortgageRate - 1) / 100,
+            loanTerm,
+            appreciationRate: homeAppreciation / 100,
+            investmentReturn: investmentReturn / 100,
+            dividendYield: dividendYield / 100,
+            monthlyRent,
+            rentGrowthRate: rentGrowth / 100,
+            marginRate: marginRate / 100,
+            helocRate: helocRate / 100,
+            fedRate,
+            caRate,
+            stateTax,
+            stdDeduction,
+            filingStatus,
+            grossIncome
+          });
+          return scenario.breakEvenYear === 'Never' ? 31 : scenario.breakEvenYear;
+        })(),
+        highBreakEven: (() => {
+          const scenario = calcScenario({
+            ...opt,
+            homePrice,
+            cashDown: opt.cashDown,
+            marginLoan: opt.marginLoan,
+            helocAmount: opt.helocAmount,
+            mortgageRate: (mortgageRate + 1) / 100,
+            loanTerm,
+            appreciationRate: homeAppreciation / 100,
+            investmentReturn: investmentReturn / 100,
+            dividendYield: dividendYield / 100,
+            monthlyRent,
+            rentGrowthRate: rentGrowth / 100,
+            marginRate: marginRate / 100,
+            helocRate: helocRate / 100,
+            fedRate,
+            caRate,
+            stateTax,
+            stdDeduction,
+            filingStatus,
+            grossIncome
+          });
+          return scenario.breakEvenYear === 'Never' ? 31 : scenario.breakEvenYear;
+        })(),
+        unit: '%'
+      },
+      {
+        variable: 'Rent Growth',
+        icon: '📊',
+        lowValue: rentGrowth - 1,
+        baseValue: rentGrowth,
+        highValue: rentGrowth + 1,
+        lowBreakEven: (() => {
+          const scenario = calcScenario({
+            homePrice,
+            cashDown: opt.cashDown,
+            marginLoan: opt.marginLoan,
+            helocAmount: opt.helocAmount,
+            mortgageRate: mortgageRate / 100,
+            loanTerm,
+            appreciationRate: homeAppreciation / 100,
+            investmentReturn: investmentReturn / 100,
+            dividendYield: dividendYield / 100,
+            monthlyRent,
+            rentGrowthRate: (rentGrowth - 1) / 100,
+            marginRate: marginRate / 100,
+            helocRate: helocRate / 100,
+            fedRate,
+            caRate,
+            stateTax,
+            stdDeduction,
+            filingStatus,
+            grossIncome
+          });
+          return scenario.breakEvenYear === 'Never' ? 31 : scenario.breakEvenYear;
+        })(),
+        highBreakEven: (() => {
+          const scenario = calcScenario({
+            homePrice,
+            cashDown: opt.cashDown,
+            marginLoan: opt.marginLoan,
+            helocAmount: opt.helocAmount,
+            mortgageRate: mortgageRate / 100,
+            loanTerm,
+            appreciationRate: homeAppreciation / 100,
+            investmentReturn: investmentReturn / 100,
+            dividendYield: dividendYield / 100,
+            monthlyRent,
+            rentGrowthRate: (rentGrowth + 1) / 100,
+            marginRate: marginRate / 100,
+            helocRate: helocRate / 100,
+            fedRate,
+            caRate,
+            stateTax,
+            stdDeduction,
+            filingStatus,
+            grossIncome
+          });
+          return scenario.breakEvenYear === 'Never' ? 31 : scenario.breakEvenYear;
+        })(),
+        unit: '%/yr'
+      }
+    ].map(s => ({
+      ...s,
+      impact: Math.abs(s.highBreakEven - s.lowBreakEven),
+      direction: s.highBreakEven > s.lowBreakEven ? 'negative' : 'positive'
+    })).sort((a, b) => b.impact - a.impact);
+
+    // Find load-bearing assumptions
+    const loadBearing = sensitivities.filter(s => s.impact >= 3);
+
+    return (
+      <>
+        {/* Header */}
+        <div style={{
+          background: 'linear-gradient(135deg, rgba(139,92,246,0.15), rgba(168,85,247,0.1))',
+          borderRadius: '20px',
+          padding: '24px',
+          border: '2px solid rgba(139,92,246,0.4)',
+          marginBottom: '24px',
+          textAlign: 'center'
+        }}>
+          <div style={{ fontSize: '3rem', marginBottom: '8px' }}>📊</div>
+          <h2 style={{ fontSize: '1.8rem', fontWeight: '700', color: '#a78bfa', marginBottom: '8px' }}>Sensitivity Analysis</h2>
+          <p style={{ color: '#c0c0d0', margin: 0 }}>
+            How changes in assumptions affect your break-even year
+          </p>
+        </div>
+
+        {/* Load-Bearing Assumptions Alert */}
+        {loadBearing.length > 0 && (
+          <div style={{
+            background: 'rgba(251,191,36,0.1)',
+            border: '1px solid rgba(251,191,36,0.3)',
+            borderRadius: '12px',
+            padding: '16px 20px',
+            marginBottom: '24px'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+              <span style={{ fontSize: '1.3rem' }}>⚠️</span>
+              <span style={{ color: '#fbbf24', fontWeight: '600', fontSize: '1rem' }}>Load-Bearing Assumptions</span>
+            </div>
+            <p style={{ color: '#d0d0e0', fontSize: '0.9rem', margin: '0 0 12px 0' }}>
+              These assumptions have the biggest impact on your break-even. Small changes could shift the verdict:
+            </p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+              {loadBearing.map((s, i) => (
+                <span key={i} style={{
+                  padding: '6px 12px',
+                  borderRadius: '8px',
+                  background: 'rgba(251,191,36,0.2)',
+                  border: '1px solid rgba(251,191,36,0.4)',
+                  color: '#fbbf24',
+                  fontSize: '0.85rem',
+                  fontWeight: '500'
+                }}>
+                  {s.icon} {s.variable} ({s.impact} year impact)
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Tornado Chart */}
+        <div style={s.card}>
+          <h3 style={{ ...s.section, marginTop: 0 }}>🌪️ Tornado Chart - Variable Impact</h3>
+          <p style={{ color: '#8b8ba7', fontSize: '0.85rem', marginBottom: '20px' }}>
+            Shows how each variable affects break-even year. Base case: Year {baseBreakEven > 30 ? 'Never' : baseBreakEven}
+          </p>
+          
+          <div style={{ display: 'grid', gap: '16px' }}>
+            {sensitivities.map((s, i) => {
+              const maxImpact = Math.max(...sensitivities.map(x => x.impact));
+              const barWidth = maxImpact > 0 ? (s.impact / maxImpact) * 100 : 0;
+              
+              return (
+                <div key={i} style={{ display: 'grid', gridTemplateColumns: '140px 1fr', gap: '16px', alignItems: 'center' }}>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontSize: '0.85rem', color: '#fff', fontWeight: '500' }}>{s.icon} {s.variable}</div>
+                    <div style={{ fontSize: '0.7rem', color: '#8b8ba7' }}>{s.lowValue}{s.unit} → {s.highValue}{s.unit}</div>
+                  </div>
+                  <div style={{ position: 'relative' }}>
+                    {/* Center line (base case) */}
+                    <div style={{ 
+                      position: 'absolute', 
+                      left: '50%', 
+                      top: 0, 
+                      bottom: 0, 
+                      width: '2px', 
+                      background: 'rgba(255,255,255,0.3)',
+                      zIndex: 1 
+                    }} />
+                    
+                    <div style={{ display: 'flex', alignItems: 'center', height: '36px' }}>
+                      {/* Low scenario bar (left) */}
+                      <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end', paddingRight: '4px' }}>
+                        <div style={{
+                          height: '28px',
+                          width: `${barWidth / 2}%`,
+                          background: s.lowBreakEven < baseBreakEven ? 'linear-gradient(90deg, #4ade80, #22c55e)' : 'linear-gradient(90deg, #f87171, #ef4444)',
+                          borderRadius: '4px 0 0 4px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'flex-start',
+                          paddingLeft: '8px',
+                          minWidth: barWidth > 0 ? '40px' : '0'
+                        }}>
+                          <span style={{ fontSize: '0.75rem', color: '#fff', fontWeight: '600' }}>
+                            {s.lowBreakEven > 30 ? '∞' : `Y${s.lowBreakEven}`}
+                          </span>
+                        </div>
+                      </div>
+                      
+                      {/* High scenario bar (right) */}
+                      <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-start', paddingLeft: '4px' }}>
+                        <div style={{
+                          height: '28px',
+                          width: `${barWidth / 2}%`,
+                          background: s.highBreakEven < baseBreakEven ? 'linear-gradient(90deg, #22c55e, #4ade80)' : 'linear-gradient(90deg, #ef4444, #f87171)',
+                          borderRadius: '0 4px 4px 0',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'flex-end',
+                          paddingRight: '8px',
+                          minWidth: barWidth > 0 ? '40px' : '0'
+                        }}>
+                          <span style={{ fontSize: '0.75rem', color: '#fff', fontWeight: '600' }}>
+                            {s.highBreakEven > 30 ? '∞' : `Y${s.highBreakEven}`}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Labels */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '4px' }}>
+                      <span style={{ fontSize: '0.65rem', color: '#8b8ba7' }}>{s.lowValue}{s.unit}</span>
+                      <span style={{ fontSize: '0.65rem', color: '#f97316' }}>Base: Y{baseBreakEven > 30 ? '∞' : baseBreakEven}</span>
+                      <span style={{ fontSize: '0.65rem', color: '#8b8ba7' }}>{s.highValue}{s.unit}</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          
+          <div style={{ marginTop: '16px', padding: '12px', background: 'rgba(0,0,0,0.2)', borderRadius: '8px' }}>
+            <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', fontSize: '0.8rem' }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ width: '12px', height: '12px', borderRadius: '3px', background: '#4ade80' }}></span>
+                Earlier break-even (better for buying)
+              </span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ width: '12px', height: '12px', borderRadius: '3px', background: '#f87171' }}></span>
+                Later break-even (worse for buying)
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* 3x3 Matrix */}
+        <div style={s.card}>
+          <h3 style={{ ...s.section, marginTop: 0 }}>📋 Break-Even Matrix: Home Appreciation vs Investment Return</h3>
+          <p style={{ color: '#8b8ba7', fontSize: '0.85rem', marginBottom: '20px' }}>
+            Break-even year for different combinations of home appreciation and investment returns
+          </p>
+          
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ ...s.table, textAlign: 'center' }}>
+              <thead>
+                <tr>
+                  <th style={{ ...s.th, textAlign: 'center' }}></th>
+                  {returnRange.map((r, i) => (
+                    <th key={i} style={{ ...s.th, textAlign: 'center' }}>
+                      📈 {r}% Return
+                      {r === investmentReturn && <span style={{ color: '#f97316' }}> (base)</span>}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {matrix.map((row, rowIdx) => (
+                  <tr key={rowIdx}>
+                    <td style={{ ...s.td, fontWeight: '600', textAlign: 'left' }}>
+                      🏠 {appreciationRange[rowIdx]}% Appreciation
+                      {appreciationRange[rowIdx] === homeAppreciation && <span style={{ color: '#f97316' }}> (base)</span>}
+                    </td>
+                    {row.map((cell, colIdx) => {
+                      const isBase = cell.appRate === homeAppreciation && cell.invReturn === investmentReturn;
+                      const isBetter = cell.breakEven < baseBreakEven;
+                      const isWorse = cell.breakEven > baseBreakEven;
+                      
+                      return (
+                        <td 
+                          key={colIdx} 
+                          style={{ 
+                            ...s.td, 
+                            textAlign: 'center',
+                            background: isBase ? 'rgba(249,115,22,0.2)' : isBetter ? 'rgba(74,222,128,0.1)' : isWorse ? 'rgba(248,113,113,0.1)' : 'transparent',
+                            border: isBase ? '2px solid #f97316' : '1px solid rgba(255,255,255,0.05)',
+                            fontWeight: isBase ? '700' : '500'
+                          }}
+                        >
+                          <div style={{ 
+                            fontSize: '1.1rem', 
+                            color: cell.breakEven > 30 ? '#f87171' : isBetter ? '#4ade80' : isWorse ? '#f87171' : '#fff' 
+                          }}>
+                            {cell.breakEven > 30 ? 'Never' : `Year ${cell.breakEven}`}
+                          </div>
+                          {!isBase && (
+                            <div style={{ fontSize: '0.7rem', color: '#8b8ba7', marginTop: '2px' }}>
+                              {cell.breakEven < baseBreakEven ? `${baseBreakEven - cell.breakEven}yr sooner` : cell.breakEven > baseBreakEven ? `${cell.breakEven - baseBreakEven}yr later` : 'same'}
+                            </div>
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Interpretation */}
+        <div style={s.card}>
+          <h3 style={{ ...s.section, marginTop: 0 }}>💡 Interpretation</h3>
+          <div style={{ display: 'grid', gap: '12px' }}>
+            <div style={{ padding: '14px', background: 'rgba(74,222,128,0.1)', borderRadius: '10px', border: '1px solid rgba(74,222,128,0.2)' }}>
+              <div style={{ color: '#4ade80', fontWeight: '600', marginBottom: '6px' }}>When Buying Wins</div>
+              <div style={{ color: '#d0d0e0', fontSize: '0.9rem' }}>
+                Higher home appreciation ({homeAppreciation + 2}%+) or lower investment returns ({investmentReturn - 2}% or less) favor buying. 
+                {loadBearing.length > 0 && ` Your most sensitive variable is ${loadBearing[0].variable}.`}
+              </div>
+            </div>
+            <div style={{ padding: '14px', background: 'rgba(248,113,113,0.1)', borderRadius: '10px', border: '1px solid rgba(248,113,113,0.2)' }}>
+              <div style={{ color: '#f87171', fontWeight: '600', marginBottom: '6px' }}>When Renting Wins</div>
+              <div style={{ color: '#d0d0e0', fontSize: '0.9rem' }}>
+                Lower home appreciation ({homeAppreciation - 2}% or less) or higher investment returns ({investmentReturn + 2}%+) favor renting + investing.
+              </div>
+            </div>
+            <div style={{ padding: '14px', background: 'rgba(139,92,246,0.1)', borderRadius: '10px', border: '1px solid rgba(139,92,246,0.2)' }}>
+              <div style={{ color: '#a78bfa', fontWeight: '600', marginBottom: '6px' }}>Key Insight</div>
+              <div style={{ color: '#d0d0e0', fontSize: '0.9rem' }}>
+                The {sensitivities[0].variable.toLowerCase()} assumption has the biggest impact on your decision ({sensitivities[0].impact} years between best and worst case).
+                {baseBreakEven <= 7 && ' Even with unfavorable assumptions, buying may still make sense given your relatively quick base-case break-even.'}
+                {baseBreakEven > 15 && ' Consider stress-testing with more conservative assumptions before committing.'}
+              </div>
+            </div>
+          </div>
+        </div>
+      </>
+    );
+  };
+
   const renderAffordability = () => {
     const { options, monthlyTakeHome } = affordability;
 
@@ -3490,18 +4689,128 @@ export default function HomePurchaseOptimizer() {
           >
             {linkCopied ? '✓ Copied!' : '🔗 Copy Link'}
           </button>
+          
+          {/* Expert/Quick Mode Toggle */}
+          <div style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '0',
+            background: 'rgba(255,255,255,0.05)',
+            borderRadius: '20px',
+            padding: '3px',
+            border: '1px solid rgba(255,255,255,0.1)'
+          }}>
+            <button
+              onClick={() => { setIsExpertMode(false); setActiveTab('optimize'); }}
+              style={{
+                padding: '6px 14px',
+                borderRadius: '18px',
+                border: 'none',
+                fontSize: '0.8rem',
+                fontWeight: '500',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                background: !isExpertMode ? 'linear-gradient(135deg, #22c55e, #16a34a)' : 'transparent',
+                color: !isExpertMode ? '#fff' : '#8b8ba7'
+              }}
+            >
+              🎯 Quick
+            </button>
+            <button
+              onClick={() => setIsExpertMode(true)}
+              style={{
+                padding: '6px 14px',
+                borderRadius: '18px',
+                border: 'none',
+                fontSize: '0.8rem',
+                fontWeight: '500',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                background: isExpertMode ? 'linear-gradient(135deg, #a78bfa, #8b5cf6)' : 'transparent',
+                color: isExpertMode ? '#fff' : '#8b8ba7'
+              }}
+            >
+              🔬 Expert
+            </button>
+          </div>
         </div>
       </header>
       
       <div style={s.grid}>
         <aside style={s.panel}>
           <h3 style={{ ...s.section, marginTop: 0 }}>Your Situation</h3>
-          <div style={s.inputGroup}><label style={s.label}>Target Home Price</label><CurrencyInput style={s.input} value={homePrice} onChange={setHomePrice} min={100000} max={50000000} /></div>
-          <div style={s.inputGroup}><label style={s.label}>Total Cash Savings</label><CurrencyInput style={s.input} value={totalSavings} onChange={setTotalSavings} min={0} max={50000000} /></div>
-          <div style={s.inputGroup}><label style={s.label}>Stock Portfolio</label><CurrencyInput style={s.input} value={stockPortfolio} onChange={setStockPortfolio} min={0} max={50000000} /></div>
-          <div style={s.inputGroup}><label style={s.label}>Gross Income</label><CurrencyInput style={s.input} value={grossIncome} onChange={setGrossIncome} min={0} max={50000000} /></div>
-          <div style={s.inputGroup}><label style={s.label}>Monthly Rent</label><CurrencyInput style={s.input} value={monthlyRent} onChange={setMonthlyRent} min={0} max={100000} /></div>
-          <div style={s.inputGroup}><label style={s.label}>Min. Buffer</label><CurrencyInput style={s.input} value={minBuffer} onChange={setMinBuffer} min={0} max={10000000} /></div>
+          <div style={s.inputGroup}>
+            <label style={s.label}>Target Home Price</label>
+            <CurrencyInput 
+              style={s.input} 
+              value={homePrice} 
+              onChange={setHomePrice} 
+              min={100000} 
+              max={50000000}
+              error={validationErrors.homePrice}
+              onValidate={(valid, err) => setFieldError('homePrice', err)}
+            />
+          </div>
+          <div style={s.inputGroup}>
+            <label style={s.label}>Total Cash Savings</label>
+            <CurrencyInput 
+              style={s.input} 
+              value={totalSavings} 
+              onChange={setTotalSavings} 
+              min={0} 
+              max={50000000}
+              error={validationErrors.totalSavings}
+              onValidate={(valid, err) => setFieldError('totalSavings', err)}
+            />
+          </div>
+          <div style={s.inputGroup}>
+            <label style={s.label}>Stock Portfolio</label>
+            <CurrencyInput 
+              style={s.input} 
+              value={stockPortfolio} 
+              onChange={setStockPortfolio} 
+              min={0} 
+              max={50000000}
+              error={validationErrors.stockPortfolio}
+              onValidate={(valid, err) => setFieldError('stockPortfolio', err)}
+            />
+          </div>
+          <div style={s.inputGroup}>
+            <label style={s.label}>Gross Income</label>
+            <CurrencyInput 
+              style={s.input} 
+              value={grossIncome} 
+              onChange={setGrossIncome} 
+              min={1} 
+              max={50000000}
+              error={validationErrors.grossIncome}
+              onValidate={(valid, err) => setFieldError('grossIncome', err)}
+            />
+          </div>
+          <div style={s.inputGroup}>
+            <label style={s.label}>Monthly Rent</label>
+            <CurrencyInput 
+              style={s.input} 
+              value={monthlyRent} 
+              onChange={setMonthlyRent} 
+              min={0} 
+              max={100000}
+              error={validationErrors.monthlyRent}
+              onValidate={(valid, err) => setFieldError('monthlyRent', err)}
+            />
+          </div>
+          <div style={s.inputGroup}>
+            <label style={s.label}>Min. Buffer</label>
+            <CurrencyInput 
+              style={s.input} 
+              value={minBuffer} 
+              onChange={setMinBuffer} 
+              min={0} 
+              max={10000000}
+              error={validationErrors.minBuffer}
+              onValidate={(valid, err) => setFieldError('minBuffer', err)}
+            />
+          </div>
           <div style={s.inputGroup}>
             <label style={s.label}>Filing Status</label>
             <select style={s.select} value={filingStatus} onChange={e => setFilingStatus(e.target.value)}>
@@ -3516,37 +4825,201 @@ export default function HomePurchaseOptimizer() {
           </div>
           
           <h3 style={s.section}>Rates</h3>
-          <div style={s.inputGroup}><label style={s.label}>Mortgage (%)</label><input type="number" step="0.125" style={s.input} value={mortgageRate} onChange={e => setMortgageRate(Number(e.target.value))} /></div>
-          <div style={s.inputGroup}><label style={s.label}>Margin (%)</label><input type="number" step="0.25" style={s.input} value={marginRate} onChange={e => setMarginRate(Number(e.target.value))} /></div>
-          <div style={s.inputGroup}><label style={s.label}>HELOC (%)</label><input type="number" step="0.25" style={s.input} value={helocRate} onChange={e => setHelocRate(Number(e.target.value))} /></div>
-          <div style={s.inputGroup}><label style={s.label}>Cash-Out Refi (%)</label><input type="number" step="0.125" style={s.input} value={cashOutRefiRate} onChange={e => setCashOutRefiRate(Number(e.target.value))} /></div>
-          <div style={s.inputGroup}><label style={s.label}>Total Investment Return (%)</label><input type="number" step="0.5" style={s.input} value={investmentReturn} onChange={e => setInvestmentReturn(Number(e.target.value))} /></div>
+          <div style={s.inputGroup}>
+            <label style={s.label}>Mortgage (%)</label>
+            <NumberInput 
+              style={s.input} 
+              value={mortgageRate} 
+              onChange={setMortgageRate} 
+              min={0.1} 
+              max={20} 
+              step={0.125}
+              error={validationErrors.mortgageRate}
+              onValidate={(valid, err) => setFieldError('mortgageRate', err)}
+            />
+          </div>
+          <div style={s.inputGroup}>
+            <label style={s.label}>Margin (%)</label>
+            <NumberInput 
+              style={s.input} 
+              value={marginRate} 
+              onChange={setMarginRate} 
+              min={0} 
+              max={20} 
+              step={0.25}
+              error={validationErrors.marginRate}
+              onValidate={(valid, err) => setFieldError('marginRate', err)}
+            />
+          </div>
+          <div style={s.inputGroup}>
+            <label style={s.label}>HELOC (%)</label>
+            <NumberInput 
+              style={s.input} 
+              value={helocRate} 
+              onChange={setHelocRate} 
+              min={0} 
+              max={20} 
+              step={0.25}
+              error={validationErrors.helocRate}
+              onValidate={(valid, err) => setFieldError('helocRate', err)}
+            />
+          </div>
+          <div style={s.inputGroup}>
+            <label style={s.label}>Cash-Out Refi (%)</label>
+            <NumberInput 
+              style={s.input} 
+              value={cashOutRefiRate} 
+              onChange={setCashOutRefiRate} 
+              min={0} 
+              max={20} 
+              step={0.125}
+              error={validationErrors.cashOutRefiRate}
+              onValidate={(valid, err) => setFieldError('cashOutRefiRate', err)}
+            />
+          </div>
+          <div style={s.inputGroup}>
+            <label style={s.label}>Total Investment Return (%)</label>
+            <NumberInput 
+              style={s.input} 
+              value={investmentReturn} 
+              onChange={setInvestmentReturn} 
+              min={-20} 
+              max={30} 
+              step={0.5}
+              error={validationErrors.investmentReturn}
+              onValidate={(valid, err) => setFieldError('investmentReturn', err)}
+            />
+          </div>
           <div style={s.inputGroup}>
             <label style={s.label}>Dividend/Income Yield (%)</label>
-            <input type="number" step="0.25" style={s.input} value={dividendYield} onChange={e => setDividendYield(Number(e.target.value))} />
+            <NumberInput 
+              style={s.input} 
+              value={dividendYield} 
+              onChange={setDividendYield} 
+              min={0} 
+              max={20} 
+              step={0.25}
+              error={validationErrors.dividendYield}
+              onValidate={(valid, err) => setFieldError('dividendYield', err)}
+            />
             <div style={{ fontSize: '0.7rem', color: '#8b8ba7', marginTop: '4px' }}>For investment interest deduction limit (actual income only)</div>
           </div>
-          <div style={s.inputGroup}><label style={s.label}>Home Appreciation (%)</label><input type="number" step="0.5" style={s.input} value={homeAppreciation} onChange={e => setHomeAppreciation(Number(e.target.value))} /></div>
-          <div style={s.inputGroup}><label style={s.label}>Rent Growth (%/yr)</label><input type="number" step="0.5" style={s.input} value={rentGrowth} onChange={e => setRentGrowth(Number(e.target.value))} /></div>
+          <div style={s.inputGroup}>
+            <label style={s.label}>Home Appreciation (%)</label>
+            <NumberInput 
+              style={s.input} 
+              value={homeAppreciation} 
+              onChange={setHomeAppreciation} 
+              min={-10} 
+              max={20} 
+              step={0.5}
+              error={validationErrors.homeAppreciation}
+              onValidate={(valid, err) => setFieldError('homeAppreciation', err)}
+            />
+          </div>
+          <div style={s.inputGroup}>
+            <label style={s.label}>Rent Growth (%/yr)</label>
+            <NumberInput 
+              style={s.input} 
+              value={rentGrowth} 
+              onChange={setRentGrowth} 
+              min={-5} 
+              max={15} 
+              step={0.5}
+              error={validationErrors.rentGrowth}
+              onValidate={(valid, err) => setFieldError('rentGrowth', err)}
+            />
+          </div>
 
-          <button style={s.btn} onClick={handleOptimize}>🚀 Run Optimization</button>
+          <button 
+            style={{
+              ...s.btn,
+              opacity: isFormValid ? 1 : 0.5,
+              cursor: isFormValid ? 'pointer' : 'not-allowed'
+            }} 
+            onClick={handleOptimize}
+            disabled={!isFormValid}
+          >
+            🚀 Run Optimization
+          </button>
+          {!isFormValid && (
+            <div style={{ 
+              marginTop: '8px', 
+              padding: '10px 12px', 
+              background: 'rgba(248,113,113,0.1)', 
+              border: '1px solid rgba(248,113,113,0.3)', 
+              borderRadius: '8px',
+              fontSize: '0.8rem',
+              color: '#f87171',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}>
+              <span>⚠</span> Please fix validation errors above before running optimization
+            </div>
+          )}
         </aside>
         
         <main>
+          {/* Quick Mode Banner */}
+          {!isExpertMode && (
+            <div style={{
+              background: 'linear-gradient(135deg, rgba(34,197,94,0.15), rgba(22,163,74,0.1))',
+              border: '1px solid rgba(34,197,94,0.3)',
+              borderRadius: '12px',
+              padding: '16px 20px',
+              marginBottom: '20px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '16px'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <span style={{ fontSize: '1.5rem' }}>🎯</span>
+                <div>
+                  <div style={{ color: '#22c55e', fontWeight: '600', fontSize: '0.95rem' }}>Quick Mode</div>
+                  <div style={{ color: '#a0a0b0', fontSize: '0.8rem' }}>Simplified view — just the verdict. Switch to Expert for full analysis.</div>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsExpertMode(true)}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: '8px',
+                  border: '1px solid rgba(167,139,250,0.4)',
+                  background: 'rgba(167,139,250,0.1)',
+                  color: '#a78bfa',
+                  fontSize: '0.8rem',
+                  fontWeight: '500',
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                🔬 Switch to Expert
+              </button>
+            </div>
+          )}
+
           <div style={s.tabs}>
-            <button style={{ ...s.tab, ...(activeTab === 'optimize' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('optimize')}>Summary</button>
-            <button style={{ ...s.tab, ...(activeTab === 'scenarios' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('scenarios')}>Compare</button>
-            <button style={{ ...s.tab, ...(activeTab === 'holding' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('holding')}>Own vs Rent</button>
-            <button style={{ ...s.tab, ...(activeTab === 'tax' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('tax')}>Taxes</button>
-            <button style={{ ...s.tab, ...(activeTab === 'manual' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('manual')}>Manual</button>
-            <button style={{ ...s.tab, ...(activeTab === 'afford' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('afford')}>Afford</button>
+            <button style={{ ...s.tab, ...(activeTab === 'optimize' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('optimize')}>Best Strategy</button>
+            {isExpertMode && (
+              <>
+                <button style={{ ...s.tab, ...(activeTab === 'scenarios' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('scenarios')}>Side-by-Side</button>
+                <button style={{ ...s.tab, ...(activeTab === 'holding' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('holding')}>Own vs Rent</button>
+                <button style={{ ...s.tab, ...(activeTab === 'sensitivity' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('sensitivity')}>Sensitivity</button>
+                <button style={{ ...s.tab, ...(activeTab === 'tax' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('tax')}>Taxes</button>
+                <button style={{ ...s.tab, ...(activeTab === 'manual' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('manual')}>Build Your Own</button>
+              </>
+            )}
+            <button style={{ ...s.tab, ...(activeTab === 'afford' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('afford')}>What Can I Buy?</button>
           </div>
 
           {activeTab === 'optimize' && renderOptimize()}
-          {activeTab === 'scenarios' && renderScenarios()}
-          {activeTab === 'manual' && renderManual()}
-          {activeTab === 'tax' && renderTax()}
-          {activeTab === 'holding' && renderHolding()}
+          {isExpertMode && activeTab === 'scenarios' && renderScenarios()}
+          {isExpertMode && activeTab === 'manual' && renderManual()}
+          {isExpertMode && activeTab === 'tax' && renderTax()}
+          {isExpertMode && activeTab === 'holding' && renderHolding()}
+          {isExpertMode && activeTab === 'sensitivity' && renderSensitivity()}
           {activeTab === 'afford' && renderAffordability()}
         </main>
       </div>
