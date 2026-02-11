@@ -1009,6 +1009,9 @@ export default function HomePurchaseOptimizer() {
   // Preset state
   const [activePreset, setActivePreset] = useState(null);
 
+  // Expert/Quick Mode state
+  const [isExpertMode, setIsExpertMode] = useState(true);
+
   // Apply preset function
   const applyPreset = useCallback((presetKey) => {
     const preset = SCENARIO_PRESETS[presetKey];
@@ -3788,6 +3791,50 @@ export default function HomePurchaseOptimizer() {
           >
             {linkCopied ? '✓ Copied!' : '🔗 Copy Link'}
           </button>
+          
+          {/* Expert/Quick Mode Toggle */}
+          <div style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '0',
+            background: 'rgba(255,255,255,0.05)',
+            borderRadius: '20px',
+            padding: '3px',
+            border: '1px solid rgba(255,255,255,0.1)'
+          }}>
+            <button
+              onClick={() => { setIsExpertMode(false); setActiveTab('optimize'); }}
+              style={{
+                padding: '6px 14px',
+                borderRadius: '18px',
+                border: 'none',
+                fontSize: '0.8rem',
+                fontWeight: '500',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                background: !isExpertMode ? 'linear-gradient(135deg, #22c55e, #16a34a)' : 'transparent',
+                color: !isExpertMode ? '#fff' : '#8b8ba7'
+              }}
+            >
+              🎯 Quick
+            </button>
+            <button
+              onClick={() => setIsExpertMode(true)}
+              style={{
+                padding: '6px 14px',
+                borderRadius: '18px',
+                border: 'none',
+                fontSize: '0.8rem',
+                fontWeight: '500',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                background: isExpertMode ? 'linear-gradient(135deg, #a78bfa, #8b5cf6)' : 'transparent',
+                color: isExpertMode ? '#fff' : '#8b8ba7'
+              }}
+            >
+              🔬 Expert
+            </button>
+          </div>
         </div>
       </header>
       
@@ -4016,20 +4063,63 @@ export default function HomePurchaseOptimizer() {
         </aside>
         
         <main>
+          {/* Quick Mode Banner */}
+          {!isExpertMode && (
+            <div style={{
+              background: 'linear-gradient(135deg, rgba(34,197,94,0.15), rgba(22,163,74,0.1))',
+              border: '1px solid rgba(34,197,94,0.3)',
+              borderRadius: '12px',
+              padding: '16px 20px',
+              marginBottom: '20px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '16px'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <span style={{ fontSize: '1.5rem' }}>🎯</span>
+                <div>
+                  <div style={{ color: '#22c55e', fontWeight: '600', fontSize: '0.95rem' }}>Quick Mode</div>
+                  <div style={{ color: '#a0a0b0', fontSize: '0.8rem' }}>Simplified view — just the verdict. Switch to Expert for full analysis.</div>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsExpertMode(true)}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: '8px',
+                  border: '1px solid rgba(167,139,250,0.4)',
+                  background: 'rgba(167,139,250,0.1)',
+                  color: '#a78bfa',
+                  fontSize: '0.8rem',
+                  fontWeight: '500',
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                🔬 Switch to Expert
+              </button>
+            </div>
+          )}
+
           <div style={s.tabs}>
             <button style={{ ...s.tab, ...(activeTab === 'optimize' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('optimize')}>Best Strategy</button>
-            <button style={{ ...s.tab, ...(activeTab === 'scenarios' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('scenarios')}>Side-by-Side</button>
-            <button style={{ ...s.tab, ...(activeTab === 'holding' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('holding')}>Own vs Rent</button>
-            <button style={{ ...s.tab, ...(activeTab === 'tax' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('tax')}>Taxes</button>
-            <button style={{ ...s.tab, ...(activeTab === 'manual' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('manual')}>Build Your Own</button>
+            {isExpertMode && (
+              <>
+                <button style={{ ...s.tab, ...(activeTab === 'scenarios' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('scenarios')}>Side-by-Side</button>
+                <button style={{ ...s.tab, ...(activeTab === 'holding' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('holding')}>Own vs Rent</button>
+                <button style={{ ...s.tab, ...(activeTab === 'tax' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('tax')}>Taxes</button>
+                <button style={{ ...s.tab, ...(activeTab === 'manual' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('manual')}>Build Your Own</button>
+              </>
+            )}
             <button style={{ ...s.tab, ...(activeTab === 'afford' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('afford')}>What Can I Buy?</button>
           </div>
 
           {activeTab === 'optimize' && renderOptimize()}
-          {activeTab === 'scenarios' && renderScenarios()}
-          {activeTab === 'manual' && renderManual()}
-          {activeTab === 'tax' && renderTax()}
-          {activeTab === 'holding' && renderHolding()}
+          {isExpertMode && activeTab === 'scenarios' && renderScenarios()}
+          {isExpertMode && activeTab === 'manual' && renderManual()}
+          {isExpertMode && activeTab === 'tax' && renderTax()}
+          {isExpertMode && activeTab === 'holding' && renderHolding()}
           {activeTab === 'afford' && renderAffordability()}
         </main>
       </div>
