@@ -5,85 +5,91 @@ Priority fixes to transform this from "expert tool" to "tool anyone can use."
 ---
 
 ## ✅ Fix 1: Progressive Disclosure
-**Problem:** After clicking Optimize, users are hit with 11 distinct information sections. Cognitive overload → users bail.
+**Problem:** After clicking Optimize, users are hit with 11 distinct information sections. Cognitive overload.
 
 **Solution:**
-- Show verdict card + 3 key metrics by default
-- Collapse all detailed sections (Interest Deductibility, Non-Recoverable Costs, Top 5 Strategies, etc.)
-- Add "Show Details" expandables for power users
-- Keep the critical info above the fold
+- Show verdict card + 5 key metrics by default (break-even, advantage, monthly cost, comfort level, opportunity cost)
+- Collapse detailed sections (Interest Deductibility, Non-Recoverable Costs, Top 5 Strategies, Downside Risk)
+- "Show Full Analysis" toggle for power users
+- Critical info above the fold
 
-**Success Metric:** First-time user can understand their result without scrolling.
+**Status:** Done
 
 ---
 
-## 🔲 Fix 2: URL State Persistence
-**Problem:** Can't bookmark, share, or return to a scenario. Users lose their work.
+## ✅ Fix 2: URL State Persistence
+**Problem:** Can't bookmark, share, or return to a scenario.
 
 **Solution:**
-- Serialize key inputs to URL query params (`?homePrice=2000000&savings=1000000...`)
+- All key inputs serialized to URL query params (`?hp=2000000&sv=1000000...`)
 - On page load, hydrate state from URL
-- Add "Copy Link" button that copies shareable URL
-- Optional: localStorage backup for returning users
+- "Share Link" button copies shareable URL to clipboard
+- "Copy Summary" buttons generate formatted plain-text reports
+- Debounced URL sync on state changes
 
-**Success Metric:** User can text a link to spouse, spouse sees exact same scenario.
+**Status:** Done
 
 ---
 
-## 🔲 Fix 3: Split the Codebase
-**Problem:** 3,000 lines in one file. Impossible to maintain, test, or extend.
+## ⚠️ Fix 3: Split the Codebase
+**Problem:** Main component is ~4,745 lines. Hard to maintain and test.
 
 **Solution:**
-- Extract calculation functions to `/lib/calculations.js`
-- Extract components: `InputPanel`, `VerdictCard`, `WealthChart`, `StrategyTable`, etc.
-- Extract constants to `/lib/constants.js` (SF tax rates, etc.)
-- Keep main component as orchestrator only
+- ✅ Extract calculation functions to `app/calculations.js` (~626 lines)
+- ✅ Extract `InputPanel` component to `app/InputPanel.jsx` (~278 lines)
+- ✅ Extract `ResultsCards` to `app/ResultsCards.jsx` (~468 lines)
+- ✅ Extract `Charts` to `app/Charts.jsx` (~301 lines)
+- 🔲 Wire extracted components into main file (currently still rendering inline)
+- 🔲 Extract constants, comfort tiers, and style objects
 
-**Success Metric:** No single file > 500 lines. Can unit test calculations independently.
+**Status:** Partial — modules exist but main component still renders everything inline.
 
 ---
 
-## 🔲 Fix 4: Simplify Default Flow
-**Problem:** 14+ input fields visible at once. Dividend yield next to home price. Overwhelming.
+## ✅ Fix 4: Simplify Default Flow
+**Problem:** 14+ input fields visible at once. Overwhelming for first-time users.
 
 **Solution:**
-- Group inputs: "Your Finances" (always visible) | "Rates & Assumptions" (collapsed)
-- Move advanced inputs behind "Advanced Settings" toggle: dividend yield, rent growth, HELOC rate, cash-out refi rate
-- Smart defaults that work for 80% of SF buyers without touching anything
-- Show calculated/derived values (combined tax rate) in a subtle "info" style, not as inputs
+- Input grouping: "Your Finances" (always visible) → "Rates & Assumptions" (collapsible) → "Advanced Settings" (collapsed)
+- Inline hint text below each core input explaining what it means
+- Quick/Expert mode toggle — Quick shows only Best Strategy + What Can I Buy?
+- Smart defaults for 80% of SF buyers
+- Combined tax rate displayed as derived info, not editable input
 
-**Success Metric:** First-time user only sees 5-6 inputs before clicking Optimize.
+**Status:** Done
 
 ---
 
-## 🔲 Fix 5: Clear CTA Per Tab
-**Problem:** Each tab dumps data but doesn't tell user what to DO with it.
+## ✅ Fix 5: Clear CTA Per Tab
+**Problem:** Each tab dumps data but doesn't tell user what to DO.
 
 **Solution:**
-- **Summary tab:** "Use This Strategy" button that pre-fills Manual tab
-- **Compare tab:** "Winner: Scenario B — Use This" button
-- **Own vs Rent tab:** Clear verdict banner: "At your numbers, buying wins after year X" with "See What Would Change This" link
-- **Taxes tab:** "Your annual tax savings: $X" with "Factor This Into Your Budget" action
-- **Affordability tab:** Already has "Use This Price" — good, keep it
+- **Best Strategy tab:** Verdict card with clear outcome + "Copy Summary" / "Share Link" + cross-tab navigation to Own vs Rent, Sensitivity, Tax
+- **Side-by-Side tab:** Winner highlighted with "Use This Strategy" button
+- **Own vs Rent tab:** Clear verdict banner + "← Back to Strategy" button
+- **Taxes tab:** Annual tax savings prominently displayed
+- **Affordability tab:** "Use This Price" + "Copy Affordability Summary" + "Share Link"
+- **Quick → Expert mode:** Contextual "Switch to Expert Mode" prompt when relevant
 
-**Success Metric:** Every tab has ONE clear next action.
-
----
-
-## Execution Plan
-
-Work through fixes sequentially. After each:
-1. Implement the fix
-2. Push to GitHub
-3. Verify on Vercel preview
-4. Get approval before next fix
+**Status:** Done
 
 ---
 
-## Future Enhancements (Post-Roadmap)
-- Mobile responsive design
+## Future Enhancements
+
+### High Priority
+- Wire extracted components (InputPanel, ResultsCards, Charts) into main file to complete Fix 3
+- Extract comfort tier definitions into shared helper
+- Extract style objects into separate module
+
+### Medium Priority
+- Full mobile responsive polish (current: basic breakpoints at 900px/600px)
 - Save/export to PDF
-- Sensitivity analysis (tornado chart)
-- Risk visualization (downside scenarios)
-- Guided onboarding flow
-- API integrations (rates, Zillow, etc.)
+- Guided onboarding flow for first-time users
+- Performance optimization (memoization audit, lazy loading)
+
+### Low Priority
+- API integrations (live mortgage rates, Zillow data)
+- localStorage backup for returning users
+- Dark/light theme toggle
+- Unit tests for calculations.js
