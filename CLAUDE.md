@@ -10,14 +10,13 @@ A React app for San Francisco home buyers. Compares down payment strategies, mod
 
 ```
 app/
-├── HomePurchaseOptimizer.jsx   # Main component (~4,745 lines)
-├── calculations.js             # All financial math (~626 lines)
-├── InputPanel.jsx              # Sidebar input panel (~278 lines)
-├── ResultsCards.jsx            # Result card components (~468 lines)
-├── Charts.jsx                  # Chart components (~301 lines)
+├── HomePurchaseOptimizer.jsx   # Main component — all UI rendering (~4,745 lines)
+├── calculations.js             # All financial math & utilities (~626 lines)
 ├── layout.js                   # App layout
 └── page.js                     # Entry point (Suspense wrapper)
 ```
+
+**Architecture decision:** Financial math is extracted to `calculations.js` for testability and reuse. UI rendering stays in a single file intentionally — the component shares 20+ state variables across 7 tabs, making prop-threading across files more error-prone than keeping it inline. Previous extracted UI components (InputPanel, ResultsCards, Charts) were evaluated and found to be stale/incomplete, so they were deleted.
 
 ## All Features Implemented
 
@@ -40,7 +39,7 @@ app/
 - `estEffectiveTaxRate` — exact fed + state + FICA (SS + Medicare + Additional Medicare) + CA SDI
 - `estimatedTakeHome` — single source of truth, derived from `estEffectiveTaxRate`
 
-### UX Improvements (from ROADMAP.md)
+### UX Improvements
 - **Progressive disclosure**: Collapsible detail sections, "Show Full Analysis" toggle, downside risk inside collapsed section
 - **URL state persistence**: All inputs serialized to URL params, shareable links, Copy Link button
 - **Input grouping**: "Your Finances" visible, "Rates & Assumptions" collapsible, "Advanced Settings" collapsed
@@ -125,13 +124,12 @@ app/
 `customAssumptions` (object with propTaxRate, transferTax, parcelTax, realtorComm, closeBuy, closeSell, insuranceRate, maintenanceRate, pmiRate)
 
 ## Architecture Notes
-- **Calculations extracted**: All financial math lives in `calculations.js`. Main file imports everything.
+- **Two-file architecture**: `calculations.js` (pure math, no React) + `HomePurchaseOptimizer.jsx` (all UI). Intentionally kept as two files — see "Architecture decision" above.
 - **Comfort tiers**: Defined inline in `renderAffordability`, `renderOptimize`, and copy callbacks — could extract to shared helper.
 - **`taxBreakdown` useMemo**: Has duplicate bracket data for display only. Actual computation uses `calcFedTax`/`calcCAStateTax`.
 - **URL params**: Hydrated on mount, debounced sync on state changes.
 - **Responsive CSS**: `<style>` tag with media queries + className overrides on inline styles. Classes: `hpo-container`, `hpo-grid`, `hpo-title`, `hpo-verdict-metrics`, `hpo-tabs`, `hpo-affordability-indicator`, `hpo-cash-flow-grid`, `hpo-risk-grid`.
 - **Hook ordering**: Copy callbacks (`copyResultsSummary`, `copyAffordabilitySummary`) must be declared AFTER `estimatedTakeHome` and `affordability` to avoid TDZ errors.
-- **InputPanel.jsx / ResultsCards.jsx / Charts.jsx**: Extracted components exist but are not yet wired into the main component (main file still renders everything inline).
 
 ## ROADMAP Status
 
@@ -139,7 +137,7 @@ app/
 |-----|--------|-------------|
 | Fix 1: Progressive Disclosure | Done | Collapsible sections, show details toggle |
 | Fix 2: URL State Persistence | Done | URL params + shareable links + Copy Link |
-| Fix 3: Split the Codebase | Partial | calculations.js extracted; InputPanel/ResultsCards/Charts exist but not wired in |
+| Fix 3: Split the Codebase | Done | calculations.js extracted; UI kept inline intentionally |
 | Fix 4: Simplify Default Flow | Done | Quick/Expert mode, grouped inputs, input hints |
 | Fix 5: Clear CTA Per Tab | Done | Every tab has one clear next action + cross-tab navigation |
 

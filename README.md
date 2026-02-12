@@ -26,15 +26,12 @@ A financial planning tool for San Francisco home purchases. Analyzes multiple fi
 
 ```
 app/
-├── HomePurchaseOptimizer.jsx   # Main component (~4,745 lines)
+├── HomePurchaseOptimizer.jsx   # Main component — all UI rendering (~4,745 lines)
 ├── calculations.js             # Financial math & utilities (~626 lines)
-├── InputPanel.jsx              # Sidebar input panel component
-├── ResultsCards.jsx            # Result card components
-├── Charts.jsx                  # Chart components
 ├── layout.js                   # App layout
 └── page.js                     # Entry point
 CLAUDE.md                       # AI session context
-ROADMAP.md                      # UX roadmap & status
+ROADMAP.md                      # Roadmap & future enhancements
 ```
 
 ## Setup
