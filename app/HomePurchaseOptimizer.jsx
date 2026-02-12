@@ -328,6 +328,7 @@ export default function HomePurchaseOptimizer() {
   
   // CTA-related state
   const [showSensitivity, setShowSensitivity] = useState(false);
+  const [whatIfAppreciation, setWhatIfAppreciation] = useState(null); // null = use default
 
   // Preset state
   const [activePreset, setActivePreset] = useState(null);
@@ -3339,6 +3340,31 @@ export default function HomePurchaseOptimizer() {
       );
     }
 
+    // Interactive "What If?" slider
+    const whatIfRate = whatIfAppreciation !== null ? whatIfAppreciation : homeAppreciation;
+    const whatIfBreakEven = (() => {
+      if (whatIfAppreciation === null) return opt.breakEvenYear;
+      const scenario = calcScenario({
+        homePrice, cashDown: opt.cashDown, marginLoan: opt.marginLoan, helocAmount: opt.helocAmount,
+        mortgageRate: mortgageRate / 100, loanTerm, appreciationRate: whatIfAppreciation / 100,
+        investmentReturn: investmentReturn / 100, dividendYield: dividendYield / 100,
+        monthlyRent, rentGrowthRate: rentGrowth / 100, marginRate: marginRate / 100,
+        helocRate: helocRate / 100, fedRate, caRate, stateTax, stdDeduction, filingStatus, grossIncome
+      });
+      return scenario.breakEvenYear;
+    })();
+    const whatIfAdvantage = (() => {
+      if (whatIfAppreciation === null) return opt.yearlyAnalysis?.[9]?.advantage || 0;
+      const scenario = calcScenario({
+        homePrice, cashDown: opt.cashDown, marginLoan: opt.marginLoan, helocAmount: opt.helocAmount,
+        mortgageRate: mortgageRate / 100, loanTerm, appreciationRate: whatIfAppreciation / 100,
+        investmentReturn: investmentReturn / 100, dividendYield: dividendYield / 100,
+        monthlyRent, rentGrowthRate: rentGrowth / 100, marginRate: marginRate / 100,
+        helocRate: helocRate / 100, fedRate, caRate, stateTax, stdDeduction, filingStatus, grossIncome
+      });
+      return scenario.yearlyAnalysis?.[9]?.advantage || 0;
+    })();
+
     // Calculate sensitivity scenarios
     const baseBreakEven = opt.breakEvenYear === 'Never' ? 31 : opt.breakEvenYear;
     
@@ -3542,6 +3568,82 @@ export default function HomePurchaseOptimizer() {
           <p style={{ color: '#c0c0d0', margin: 0 }}>
             How changes in assumptions affect your break-even year
           </p>
+        </div>
+
+        {/* Interactive What If? Slider */}
+        <div style={{
+          background: 'rgba(255,255,255,0.03)',
+          borderRadius: '16px',
+          padding: '24px',
+          border: '1px solid rgba(255,255,255,0.08)',
+          marginBottom: '24px'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
+            <span style={{ fontSize: '1.3rem' }}>🎛️</span>
+            <div>
+              <div style={{ fontWeight: '600', color: '#fff', fontSize: '1rem' }}>What If? — Home Appreciation</div>
+              <div style={{ fontSize: '0.78rem', color: '#8b8ba7' }}>Drag the slider to see how appreciation affects your outcome</div>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '16px' }}>
+            <span style={{ fontSize: '0.75rem', color: '#8b8ba7', minWidth: '20px' }}>0%</span>
+            <input
+              type="range"
+              min={0}
+              max={10}
+              step={0.5}
+              value={whatIfRate}
+              onChange={(e) => setWhatIfAppreciation(parseFloat(e.target.value))}
+              style={{ flex: 1, accentColor: '#a78bfa' }}
+            />
+            <span style={{ fontSize: '0.75rem', color: '#8b8ba7', minWidth: '25px' }}>10%</span>
+            <div style={{
+              background: 'rgba(167,139,250,0.2)',
+              border: '1px solid rgba(167,139,250,0.4)',
+              borderRadius: '8px',
+              padding: '6px 14px',
+              minWidth: '60px',
+              textAlign: 'center'
+            }}>
+              <div style={{ fontSize: '1.2rem', fontWeight: '700', color: '#a78bfa' }}>{whatIfRate.toFixed(1)}%</div>
+              <div style={{ fontSize: '0.6rem', color: '#8b8ba7' }}>per year</div>
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '10px', padding: '14px', textAlign: 'center' }}>
+              <div style={{ fontSize: '0.65rem', color: '#8b8ba7', marginBottom: '4px' }}>Break-Even</div>
+              <div style={{ fontSize: '1.3rem', fontWeight: '700', color: whatIfBreakEven === 'Never' ? '#f87171' : whatIfBreakEven <= 7 ? '#4ade80' : '#fbbf24' }}>
+                {whatIfBreakEven === 'Never' ? 'Never' : `Year ${whatIfBreakEven}`}
+              </div>
+              {whatIfAppreciation !== null && opt.breakEvenYear !== whatIfBreakEven && (
+                <div style={{ fontSize: '0.7rem', color: '#8b8ba7', marginTop: '4px' }}>
+                  was: {opt.breakEvenYear === 'Never' ? 'Never' : `Year ${opt.breakEvenYear}`} at {homeAppreciation}%
+                </div>
+              )}
+            </div>
+            <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '10px', padding: '14px', textAlign: 'center' }}>
+              <div style={{ fontSize: '0.65rem', color: '#8b8ba7', marginBottom: '4px' }}>10-Year Advantage</div>
+              <div style={{ fontSize: '1.3rem', fontWeight: '700', color: whatIfAdvantage >= 0 ? '#4ade80' : '#f87171' }}>
+                {whatIfAdvantage >= 0 ? '+' : ''}{fmt$(whatIfAdvantage)}
+              </div>
+              {whatIfAppreciation !== null && (
+                <div style={{ fontSize: '0.7rem', color: '#8b8ba7', marginTop: '4px' }}>
+                  vs renting over 10 years
+                </div>
+              )}
+            </div>
+          </div>
+
+          {whatIfAppreciation !== null && (
+            <button
+              onClick={() => setWhatIfAppreciation(null)}
+              style={{ marginTop: '12px', background: 'none', border: 'none', color: '#8b8ba7', cursor: 'pointer', fontSize: '0.78rem', padding: 0 }}
+            >
+              Reset to default ({homeAppreciation}%)
+            </button>
+          )}
         </div>
 
         {/* Load-Bearing Assumptions Alert */}
