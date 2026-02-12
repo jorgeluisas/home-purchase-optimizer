@@ -990,7 +990,7 @@ export default function HomePurchaseOptimizer() {
         </div>
 
         {/* Side-by-side comparison */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '20px' }}>
+        <div className="hpo-cash-flow-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '20px' }}>
           {/* Current Situation */}
           <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: '12px', padding: '16px', border: '1px solid rgba(255,255,255,0.08)' }}>
             <div style={{ fontSize: '0.75rem', color: '#8b8ba7', textTransform: 'uppercase', marginBottom: '12px' }}>Current (Renting)</div>
@@ -1329,7 +1329,7 @@ export default function HomePurchaseOptimizer() {
           <div style={{ fontSize: '2rem', fontWeight: '700', color: verdict.color, marginBottom: '4px' }}>{verdict.verdict}</div>
           <div style={{ fontSize: '1rem', color: '#c0c0d0', marginBottom: '16px' }}>{verdict.desc}</div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '10px', marginTop: '16px' }}>
+          <div className="hpo-verdict-metrics" style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '10px', marginTop: '16px' }}>
             <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '10px', padding: '12px' }}>
               <div style={{ fontSize: '0.65rem', color: '#8b8ba7', marginBottom: '4px' }}>10-Year Advantage</div>
               <div style={{ fontSize: '1rem', fontWeight: '700', color: advantage10 >= 0 ? '#4ade80' : '#f87171' }}>
@@ -1420,7 +1420,7 @@ export default function HomePurchaseOptimizer() {
         </div>
 
         {/* AFFORDABILITY INDICATOR */}
-        <div style={{
+        <div className="hpo-affordability-indicator" style={{
           background: `linear-gradient(135deg, ${comfort.color}15, ${comfort.color}08)`,
           borderRadius: '16px', padding: '20px 24px', border: `2px solid ${comfort.color}40`, marginBottom: '24px',
           display: 'flex', alignItems: 'center', gap: '20px',
@@ -1567,7 +1567,7 @@ export default function HomePurchaseOptimizer() {
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '16px' }}>
+          <div className="hpo-risk-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '16px' }}>
             <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '10px', padding: '14px' }}>
               <div style={{ fontSize: '0.7rem', color: '#8b8ba7', textTransform: 'uppercase', marginBottom: '6px' }}>Portfolio -20%</div>
               <div style={{ fontSize: '1.1rem', fontWeight: '600', color: '#f87171' }}>{fmt$(stockPortfolio * 0.8)}</div>
@@ -4273,9 +4273,29 @@ export default function HomePurchaseOptimizer() {
   };
 
   return (
-    <div style={s.container}>
+    <div style={s.container} className="hpo-container">
+      <style>{`
+        @media (max-width: 900px) {
+          .hpo-grid { grid-template-columns: 1fr !important; }
+          .hpo-grid aside { max-height: none !important; }
+          .hpo-verdict-metrics { grid-template-columns: repeat(2, 1fr) !important; }
+          .hpo-cash-flow-grid { grid-template-columns: 1fr !important; }
+          .hpo-risk-grid { grid-template-columns: 1fr !important; }
+          .hpo-tabs { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+          .hpo-comfort-row { flex-wrap: wrap !important; }
+          .hpo-affordability-indicator { flex-direction: column !important; text-align: center !important; }
+          .hpo-affordability-indicator > div:nth-child(2) { border-left: none !important; padding-left: 0 !important; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 16px; }
+        }
+        @media (max-width: 600px) {
+          .hpo-container { padding: 12px !important; }
+          .hpo-title { font-size: 1.8rem !important; }
+          .hpo-verdict-metrics { grid-template-columns: 1fr 1fr !important; }
+          .hpo-tabs button { padding: 10px 14px !important; font-size: 0.78rem !important; }
+          .hpo-margin-grid { grid-template-columns: 1fr !important; }
+        }
+      `}</style>
       <header style={s.header}>
-        <h1 style={s.title}>Home Purchase Optimizer</h1>
+        <h1 style={s.title} className="hpo-title">Home Purchase Optimizer</h1>
         <p style={{ color: '#8b8ba7', fontSize: '1rem' }}>AI-powered strategy optimization for SF homebuyers</p>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', marginTop: '12px', flexWrap: 'wrap' }}>
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'rgba(249,115,22,0.15)', border: '1px solid rgba(249,115,22,0.3)', borderRadius: '20px', padding: '6px 14px', fontSize: '0.8rem', color: '#fb923c' }}>🌉 San Francisco Edition</div>
@@ -4339,7 +4359,7 @@ export default function HomePurchaseOptimizer() {
         </div>
       </header>
       
-      <div style={s.grid}>
+      <div style={s.grid} className="hpo-grid">
         <aside style={s.panel}>
           <h3 style={{ ...s.section, marginTop: 0 }}>Your Situation</h3>
           <div style={s.inputGroup}>
@@ -4626,7 +4646,7 @@ export default function HomePurchaseOptimizer() {
             </div>
           )}
 
-          <div style={s.tabs}>
+          <div style={s.tabs} className="hpo-tabs">
             <button style={{ ...s.tab, ...(activeTab === 'afford' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('afford')}>What Can I Buy?</button>
             <button style={{ ...s.tab, ...(activeTab === 'optimize' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('optimize')}>Best Strategy</button>
             {isExpertMode && (
