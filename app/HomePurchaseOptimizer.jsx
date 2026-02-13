@@ -3,35 +3,13 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area, ComposedChart, ReferenceLine, Label } from 'recharts';
-
-// URL param mapping (short keys for cleaner URLs)
-const URL_PARAM_MAP = {
-  homePrice: 'hp',
-  totalSavings: 'ts',
-  stockPortfolio: 'sp',
-  grossIncome: 'gi',
-  monthlyRent: 'mr',
-  rentGrowth: 'rg',
-  filingStatus: 'fs',
-  mortgageRate: 'mrt',
-  marginRate: 'mgr',
-  helocRate: 'hr',
-  cashOutRefiRate: 'cor',
-  investmentReturn: 'ir',
-  dividendYield: 'dy',
-  homeAppreciation: 'ha',
-  loanTerm: 'lt',
-  minBuffer: 'mb',
-  manualDpPct: 'mdp',
-  manualMarginPct: 'mmp',
-  manualHelocPct: 'mhp',
-  activeTab: 'tab',
-};
-
-// Reverse mapping for hydration
-const REVERSE_URL_MAP = Object.fromEntries(
-  Object.entries(URL_PARAM_MAP).map(([k, v]) => [v, k])
-);
+import {
+  SF, URL_PARAM_MAP, REVERSE_URL_MAP,
+  fmt$, fmtPct, fmtPctWhole, fmtNum,
+  calcCAStateTax, calcFedTax, getFedRate, getCARate,
+  calcMonthly, genAmort, calcPMI, calcTxCosts,
+  calcScenario, runOptimization, calcAffordability
+} from './calculations';
 
 // Info Box Component
 const InfoBox = ({ title, children, recommendation, isOpen, onToggle }) => (
@@ -60,665 +38,10 @@ const InfoBox = ({ title, children, recommendation, isOpen, onToggle }) => (
   </div>
 );
 
-// Constants
-const SF = { propTaxRate: 0.0118, transferTax: 0.0068, parcelTax: 350, realtorComm: 0.05, closeBuy: 0.015, closeSell: 0.01 };
+// All constants, tax functions, scenario calculations, optimization engine,
+// affordability calculator, and format helpers are imported from ./calculations.js
 
-// Utility functions
-const calcCAStateTax = (inc, stat) => {
-  const rates = [{min:0,max:10412,r:0.01},{min:10412,max:24684,r:0.02},{min:24684,max:38959,r:0.04},{min:38959,max:54081,r:0.06},{min:54081,max:68350,r:0.08},{min:68350,max:349137,r:0.093},{min:349137,max:418961,r:0.103},{min:418961,max:698271,r:0.113},{min:698271,max:Infinity,r:0.123}];
-  const m = stat === 'married' ? 2 : 1;
-  let tax = 0;
-  for (const b of rates) if (inc > b.min * m) tax += Math.max(0, Math.min(inc, b.max * m) - b.min * m) * b.r;
-  // CA Mental Health Services Tax: 1% on income over $1M (same for ALL filers)
-  if (inc > 1000000) tax += (inc - 1000000) * 0.01;
-  return tax;
-};
-
-const calcFedTax = (inc, stat) => {
-  const br = stat === 'married' ? [{min:0,max:23200,r:0.10},{min:23200,max:94300,r:0.12},{min:94300,max:201050,r:0.22},{min:201050,max:383900,r:0.24},{min:383900,max:487450,r:0.32},{min:487450,max:731200,r:0.35},{min:731200,max:Infinity,r:0.37}] : [{min:0,max:11600,r:0.10},{min:11600,max:47150,r:0.12},{min:47150,max:100525,r:0.22},{min:100525,max:191950,r:0.24},{min:191950,max:243725,r:0.32},{min:243725,max:609350,r:0.35},{min:609350,max:Infinity,r:0.37}];
-  let tax = 0;
-  for (const b of br) if (inc > b.min) tax += Math.max(0, Math.min(inc, b.max) - b.min) * b.r;
-  return tax;
-};
-
-const getFedRate = (inc, stat) => {
-  const br = stat === 'married' ? [{min:0,max:23200,r:0.10},{min:23200,max:94300,r:0.12},{min:94300,max:201050,r:0.22},{min:201050,max:383900,r:0.24},{min:383900,max:487450,r:0.32},{min:487450,max:731200,r:0.35},{min:731200,max:Infinity,r:0.37}] : [{min:0,max:11600,r:0.10},{min:11600,max:47150,r:0.12},{min:47150,max:100525,r:0.22},{min:100525,max:191950,r:0.24},{min:191950,max:243725,r:0.32},{min:243725,max:609350,r:0.35},{min:609350,max:Infinity,r:0.37}];
-  for (const b of br) if (inc >= b.min && inc < b.max) return b.r;
-  return 0.37;
-};
-
-const getCARate = (inc, stat) => {
-  const m = stat === 'married' ? 2 : 1;
-  const br = [{min:0,max:10412,r:0.01},{min:10412,max:24684,r:0.02},{min:24684,max:38959,r:0.04},{min:38959,max:54081,r:0.06},{min:54081,max:68350,r:0.08},{min:68350,max:349137,r:0.093},{min:349137,max:418961,r:0.103},{min:418961,max:698271,r:0.113},{min:698271,max:Infinity,r:0.123}];
-  let baseRate = 0.123; // Default to top bracket
-  for (const b of br) {
-    if (inc >= b.min * m && inc < b.max * m) { baseRate = b.r; break; }
-  }
-  // Add CA Mental Health Services Tax (1% on income over $1M)
-  // Note: $1M threshold is NOT doubled for married - it's $1M for all filers
-  if (inc > 1000000) baseRate += 0.01;
-  return baseRate;
-};
-
-const calcMonthly = (p, r, y) => { if (p <= 0) return 0; const mr = r/12, n = y*12; return mr === 0 ? p/n : p*(mr*Math.pow(1+mr,n))/(Math.pow(1+mr,n)-1); };
-
-const genAmort = (principal, rate, years) => {
-  if (principal <= 0) return { schedule: [], monthlyPayment: 0, totalInterest: 0 };
-  const mp = calcMonthly(principal, rate, years), mr = rate / 12, schedule = [];
-  let bal = principal, totInt = 0, totPrin = 0;
-  for (let m = 1; m <= years * 12; m++) {
-    const intPay = bal * mr, prinPay = mp - intPay;
-    bal = Math.max(0, bal - prinPay); totInt += intPay; totPrin += prinPay;
-    if (m % 12 === 0) schedule.push({ year: m / 12, balance: bal, interestPaid: totInt, principalPaid: totPrin, yearlyInterest: schedule.length > 0 ? totInt - schedule[schedule.length - 1].interestPaid : totInt, yearlyPrincipal: schedule.length > 0 ? totPrin - schedule[schedule.length - 1].principalPaid : totPrin });
-  }
-  return { schedule, monthlyPayment: mp, totalInterest: totInt };
-};
-
-const calcPMI = (loan, home) => {
-  if (loan <= 0 || loan/home <= 0.80) return { monthly: 0, years: 0, total: 0 };
-  const target = home * 0.78, mp = calcMonthly(loan, 0.065, 30), mr = 0.065/12;
-  let bal = loan, months = 0;
-  while (bal > target && months < 360) { bal -= (mp - bal*mr); months++; }
-  const monthly = loan * 0.005 / 12;
-  return { monthly, years: months/12, total: monthly * months };
-};
-
-const calcTxCosts = (price, loan) => {
-  const buy = price * SF.transferTax + price * SF.closeBuy + loan * 0.005 + Math.min(15000, price * 0.003) + 2500;
-  const sell = price * SF.realtorComm + price * SF.transferTax + price * SF.closeSell + Math.min(50000, price * 0.01);
-  return { buy, sell, total: buy + sell };
-};
-
-// Core scenario calculation - FIXED VERSION
-const calcScenario = (params) => {
-  const { homePrice, cashDown, marginLoan, helocAmount, cashOutRefiAmount = 0, mortgageRate, cashOutRefiRate = 0.0675, loanTerm, appreciationRate, investmentReturn, dividendYield = 0.02, monthlyRent, rentGrowthRate = 0.03, marginRate, helocRate, fedRate, caRate, stateTax, stdDeduction, filingStatus = 'married', grossIncome = 0 } = params;
-  
-  // Determine if this is a cash purchase (no mortgage)
-  const totalEquityInput = cashDown + marginLoan;
-  const needsMortgage = totalEquityInput < homePrice;
-  const baseMortgageLoan = needsMortgage ? homePrice - totalEquityInput : 0;
-
-  // Cash-out refinance: replaces mortgage with larger loan, extracts equity for investment
-  // If cashOutRefiAmount > 0, we're doing a cash-out refi strategy
-  const isCashOutRefi = cashOutRefiAmount > 0;
-  const actualCashOutAmount = isCashOutRefi ? cashOutRefiAmount : 0;
-  const totalRefiLoan = isCashOutRefi ? baseMortgageLoan + actualCashOutAmount : 0;
-  const mortgageLoan = isCashOutRefi ? 0 : baseMortgageLoan; // If refi, no separate mortgage
-  const effectiveMortgageRate = isCashOutRefi ? cashOutRefiRate : mortgageRate;
-
-  // HELOC can only be taken on a home you own outright (no mortgage)
-  // OR on the equity portion of a mortgaged home (home equity)
-  // Cash-out refi is mutually exclusive with HELOC
-  const actualHELOC = (!needsMortgage && !isCashOutRefi) ? helocAmount : 0;
-
-  const propTax = homePrice * SF.propTaxRate + SF.parcelTax;
-  const insurance = homePrice * 0.003;
-  const maintenance = homePrice * 0.01;
-  const totalLoanForPMI = isCashOutRefi ? totalRefiLoan : mortgageLoan;
-  const pmi = calcPMI(totalLoanForPMI, homePrice);
-  const tx = calcTxCosts(homePrice, totalLoanForPMI);
-  // Add cash-out refi closing costs (typically 2-5% of loan amount)
-  const cashOutRefiClosingCosts = isCashOutRefi ? totalRefiLoan * 0.025 : 0;
-  const amort = isCashOutRefi
-    ? genAmort(totalRefiLoan, cashOutRefiRate, loanTerm)
-    : genAmort(mortgageLoan, mortgageRate, loanTerm);
-
-  // Interest calculations - annual
-  // For cash-out refi: acquisition debt portion gets mortgage interest treatment
-  // Cash-out portion gets investment interest treatment (if proceeds invested)
-  const acquisitionDebtInterest = isCashOutRefi ? baseMortgageLoan * cashOutRefiRate : mortgageLoan * mortgageRate;
-  const cashOutInterestAnnual = isCashOutRefi ? actualCashOutAmount * cashOutRefiRate : 0;
-  const mortgageInterestAnnual = acquisitionDebtInterest; // For backward compatibility
-  const marginInterestAnnual = marginLoan * marginRate;
-  const helocInterestAnnual = actualHELOC * helocRate;
-  const totalInterestAnnual = acquisitionDebtInterest + cashOutInterestAnnual + marginInterestAnnual + helocInterestAnnual;
-
-  // Investment income from borrowed funds invested
-  // IMPORTANT: For investment interest deduction, only ACTUAL income counts
-  // (dividends, interest, realized gains) - NOT unrealized appreciation
-  // Total return for wealth calculation still uses full investmentReturn
-  const marginInvestmentIncome = marginLoan > 0 ? marginLoan * investmentReturn : 0;
-  const helocInvestmentIncome = actualHELOC * investmentReturn;
-  const cashOutInvestmentIncome = actualCashOutAmount * investmentReturn;
-  const totalInvestmentIncome = marginInvestmentIncome + helocInvestmentIncome + cashOutInvestmentIncome;
-
-  // For deductibility limit, use only dividend/income yield (actual taxable income)
-  const marginDeductibleIncome = marginLoan > 0 ? marginLoan * dividendYield : 0;
-  const helocDeductibleIncome = actualHELOC * dividendYield;
-  const cashOutDeductibleIncome = actualCashOutAmount * dividendYield;
-  const totalDeductibleInvestmentIncome = marginDeductibleIncome + helocDeductibleIncome + cashOutDeductibleIncome;
-
-  // Tax deductions - CORRECTED LOGIC
-  // 1. Mortgage/Acquisition debt interest: deductible on Schedule A
-  //    Federal limit: $750K for loans after Dec 2017
-  //    California limit: $1M (CA did not conform to TCJA)
-  //    For cash-out refi: only the acquisition debt portion counts as mortgage interest
-  const acquisitionDebt = isCashOutRefi ? baseMortgageLoan : mortgageLoan;
-  const acquisitionDebtRate = isCashOutRefi ? cashOutRefiRate : mortgageRate;
-  const federalDeductibleMortgageInterest = Math.min(acquisitionDebt, 750000) * acquisitionDebtRate;
-  const caDeductibleMortgageInterest = Math.min(acquisitionDebt, 1000000) * acquisitionDebtRate;
-  const deductibleMortgageInterest = federalDeductibleMortgageInterest; // For backward compatibility
-  const nonDeductibleMortgageInterest = acquisitionDebtInterest - federalDeductibleMortgageInterest;
-
-  // 2. Margin interest: deductible as INVESTMENT interest (Schedule A, line 9)
-  //    Limited to net investment income (only actual income, not appreciation)
-  const deductibleMarginInterest = Math.min(marginInterestAnnual, marginDeductibleIncome);
-  const nonDeductibleMarginInterest = marginInterestAnnual - deductibleMarginInterest;
-
-  // 3. Cash-out refi interest (cash-out portion): investment interest if proceeds invested
-  const remainingDeductibleIncomeForCashOut = Math.max(0, totalDeductibleInvestmentIncome - deductibleMarginInterest);
-  const deductibleCashOutInterest = Math.min(cashOutInterestAnnual, remainingDeductibleIncomeForCashOut);
-  const nonDeductibleCashOutInterest = cashOutInterestAnnual - deductibleCashOutInterest;
-
-  // 4. HELOC interest: if proceeds used for investment, it's investment interest
-  //    Deductible up to investment income (combined with margin and cash-out)
-  const remainingDeductibleIncomeForHELOC = Math.max(0, totalDeductibleInvestmentIncome - deductibleMarginInterest - deductibleCashOutInterest);
-  const deductibleHELOCInterest = Math.min(helocInterestAnnual, remainingDeductibleIncomeForHELOC);
-  const nonDeductibleHELOCInterest = helocInterestAnnual - deductibleHELOCInterest;
-
-  // Itemized deductions for Schedule A
-  const saltCapped = Math.min(stateTax + propTax, 10000);
-  const saltLost = Math.max(0, stateTax + propTax - 10000);
-  const itemizedTotal = deductibleMortgageInterest + saltCapped;
-  const shouldItemize = itemizedTotal > stdDeduction;
-
-  // Tax benefits calculation
-  // Federal mortgage interest benefit (only if itemizing and exceeds standard)
-  const federalMortgageTaxBenefit = shouldItemize ? Math.max(0, itemizedTotal - stdDeduction) * fedRate : 0;
-
-  // California mortgage interest benefit (CA standard deduction is much lower, ~$10k married)
-  // CA allows $1M limit vs federal $750K, and most high earners itemize for CA
-  // NOTE: You CANNOT deduct CA state income tax from CA state taxes (circular) - only property tax + mortgage interest
-  const caStdDeduction = filingStatus === 'married' ? 10726 : 5363;
-  const caItemizedTotal = caDeductibleMortgageInterest + propTax; // Only mortgage interest + property tax for CA (no state tax)
-  const shouldItemizeCA = caItemizedTotal > caStdDeduction;
-  const caMortgageTaxBenefit = shouldItemizeCA ? Math.max(0, caItemizedTotal - caStdDeduction) * caRate : 0;
-
-  // Combined mortgage tax benefit
-  const mortgageTaxBenefit = federalMortgageTaxBenefit + caMortgageTaxBenefit;
-
-  // Investment interest benefit (deductible against ordinary income at combined rate)
-  const investmentInterestDeduction = deductibleMarginInterest + deductibleCashOutInterest + deductibleHELOCInterest;
-  const investInterestTaxBenefit = investmentInterestDeduction * (fedRate + caRate);
-
-  const totalTaxBenefit = mortgageTaxBenefit + investInterestTaxBenefit;
-
-  // Effective interest rates (after tax benefit)
-  const netMortgageInterest = acquisitionDebtInterest - (shouldItemize ? deductibleMortgageInterest * fedRate : 0);
-  const netCashOutInterest = cashOutInterestAnnual - (deductibleCashOutInterest * (fedRate + caRate));
-  const netMarginInterest = marginInterestAnnual - (deductibleMarginInterest * (fedRate + caRate));
-  const netHELOCInterest = helocInterestAnnual - (deductibleHELOCInterest * (fedRate + caRate));
-
-  const mortgageEffectiveRate = acquisitionDebt > 0 ? netMortgageInterest / acquisitionDebt : 0;
-  const cashOutEffectiveRate = actualCashOutAmount > 0 ? netCashOutInterest / actualCashOutAmount : 0;
-  const marginEffectiveRate = marginLoan > 0 ? netMarginInterest / marginLoan : 0;
-  const helocEffectiveRate = actualHELOC > 0 ? netHELOCInterest / actualHELOC : 0;
-
-  const totalBorrowed = (isCashOutRefi ? totalRefiLoan : mortgageLoan) + marginLoan + actualHELOC;
-  const totalNetInterest = netMortgageInterest + netCashOutInterest + netMarginInterest + netHELOCInterest;
-  const blendedEffectiveRate = totalBorrowed > 0 ? totalNetInterest / totalBorrowed : 0;
-
-  // Non-recoverable costs breakdown
-  const nonRecovBreakdown = {
-    mortgageInterest: acquisitionDebtInterest,
-    cashOutInterest: cashOutInterestAnnual,
-    marginInterest: marginInterestAnnual,
-    helocInterest: helocInterestAnnual,
-    pmi: pmi.monthly * 12,
-    propertyTax: propTax,
-    insurance: insurance,
-    maintenance: maintenance,
-    grossTotal: totalInterestAnnual + pmi.monthly * 12 + propTax + insurance + maintenance,
-    mortgageTaxBenefit: -mortgageTaxBenefit,
-    investInterestTaxBenefit: -investInterestTaxBenefit,
-    totalTaxBenefit: -totalTaxBenefit,
-    netTotal: totalInterestAnnual + pmi.monthly * 12 + propTax + insurance + maintenance - totalTaxBenefit
-  };
-  
-  // Holding period / wealth analysis
-  // CORRECTED MODEL (with NIIT):
-  // - Owner: pays mortgage + costs from income, builds equity
-  // - Renter: pays rent from income, invests what owner would have spent on down payment
-  // - Renter's returns are reduced by NIIT (3.8% on investment income for high earners)
-  // - The NET difference in monthly costs goes to/from savings
-  // - Both portfolios compound
-
-  // NIIT applies to investment income when MAGI > $250K (married) or $200K (single)
-  const niitThreshold = filingStatus === 'married' ? 250000 : 200000;
-  const subjectToNIIT = grossIncome > niitThreshold;
-  const niitRate = subjectToNIIT ? 0.038 : 0;
-  // Effective investment return after NIIT (applies to realized gains/dividends)
-  const afterNIITReturn = investmentReturn * (1 - niitRate * 0.5); // Estimate half is taxable annually
-
-  const yearlyAnalysis = [];
-
-  // Renter starts by investing what owner spent on down payment + closing costs
-  const renterInitialInvestment = totalEquityInput + tx.buy;
-  let renterPortfolio = renterInitialInvestment;
-
-  // Owner may have remaining savings after purchase (if HELOC gave cash back)
-  // For simplicity, we assume owner keeps that in investments too
-  // The key comparison is: who ends up with more wealth?
-
-  for (let y = 1; y <= 30; y++) {
-    const homeVal = homePrice * Math.pow(1 + appreciationRate, y);
-    const amortData = amort.schedule[y-1] || amort.schedule[amort.schedule.length - 1] || { balance: 0, yearlyInterest: 0 };
-    const loanBal = amortData.balance || 0;
-    
-    // Owner equity = home value - remaining mortgage/refi loan - margin loan - HELOC
-    // Note: for cash-out refi, loanBal already includes the cash-out portion (it's part of totalRefiLoan)
-    const equity = homeVal - loanBal - marginLoan - actualHELOC;
-    
-    const yPropTax = propTax * Math.pow(1.02, y - 1); // Prop 13
-    const marketPropTax = homeVal * SF.propTaxRate;
-    const prop13Savings = marketPropTax - yPropTax;
-    
-    // Owner's yearly costs (what they pay from income)
-    const yMortgageInt = amortData.yearlyInterest || (acquisitionDebtInterest * Math.pow(0.97, y));
-    const yMortgagePrincipal = amortData.yearlyPrincipal || (amort.monthlyPayment * 12 - yMortgageInt);
-
-    // Recalculate SALT each year based on actual property tax (changes with Prop 13)
-    const ySaltCapped = Math.min(stateTax + yPropTax, 10000); // Federal $10K cap
-    const ySaltFull = stateTax + yPropTax; // CA has no cap
-
-    // Federal benefit: $750K mortgage limit + $10K SALT cap
-    const yFedDeductibleInt = yMortgageInt * (acquisitionDebt <= 750000 ? 1 : 750000/acquisitionDebt);
-    const yFedItemized = yFedDeductibleInt + ySaltCapped;
-    const yFedMortgageBenefit = yFedItemized > stdDeduction ? (yFedItemized - stdDeduction) * fedRate : 0;
-
-    // CA benefit: $1M mortgage limit + only property tax (can't deduct CA tax from CA tax)
-    const yCADeductibleInt = yMortgageInt * (acquisitionDebt <= 1000000 ? 1 : 1000000/acquisitionDebt);
-    const yCAItemized = yCADeductibleInt + yPropTax; // Only property tax, not state income tax
-    const yCAMortgageBenefit = yCAItemized > caStdDeduction ? (yCAItemized - caStdDeduction) * caRate : 0;
-
-    const yMortgageBenefit = yFedMortgageBenefit + yCAMortgageBenefit;
-    const yInvestBenefit = investInterestTaxBenefit;
-    const yTotalBenefit = yMortgageBenefit + yInvestBenefit;
-    
-    // Total owner outflow (from income): P&I + margin int + HELOC int + PMI + taxes + insurance + maintenance
-    const yOwnerOutflow = (amort.monthlyPayment * 12) + marginInterestAnnual + helocInterestAnnual + 
-                          (y <= pmi.years ? pmi.monthly * 12 : 0) + 
-                          yPropTax + insurance + maintenance - yTotalBenefit;
-    
-    // Renter's yearly cost (from income)
-    const yRent = monthlyRent * 12 * Math.pow(1 + rentGrowthRate, y - 1); // Configurable annual rent increase
-    
-    // CORRECTED: Renter's portfolio compounds (with NIIT impact), then they invest/withdraw the cost difference
-    // If renting is cheaper, renter invests the difference
-    // If owning is cheaper, renter must withdraw from portfolio (or we assume income covers both)
-
-    // Simpler model: Both pay housing from income.
-    // Renter's portfolio just compounds (they're not withdrawing to pay rent)
-    // This is fair because owner isn't liquidating home equity to pay mortgage either
-    // Note: NIIT (3.8%) reduces renter's effective return on investment income
-    renterPortfolio = renterPortfolio * (1 + afterNIITReturn);
-
-    // If there's a cost difference, the cheaper option can invest the savings
-    const costDiff = yOwnerOutflow - yRent;
-    if (costDiff > 0) {
-      // Owning costs more - renter could invest the difference
-      renterPortfolio += costDiff;
-    }
-    // Note: We don't subtract if owning is cheaper because that would require
-    // the renter to have income, which they do (same as owner)
-    
-    // Owner wealth if sold today: equity minus selling costs
-    const ownerWealth = equity - tx.sell;
-    
-    yearlyAnalysis.push({
-      year: y,
-      homeValue: homeVal,
-      loanBalance: loanBal,
-      equity,
-      ownerWealth,
-      renterWealth: renterPortfolio,
-      advantage: ownerWealth - renterPortfolio,
-      breakEven: ownerWealth >= renterPortfolio,
-      prop13Savings,
-      taxBenefit: yTotalBenefit,
-      yearlyInterest: yMortgageInt,
-      yearlyPrincipal: yMortgagePrincipal,
-      ownerOutflow: yOwnerOutflow,
-      yearlyRent: yRent,
-      costDiff
-    });
-  }
-
-  const breakEvenYear = yearlyAnalysis.find(y => y.breakEven)?.year || 'Never';
-
-  // Calculate break-even sensitivity (what would make owning better)
-  const year1Data = yearlyAnalysis[0] || {};
-  const year30Data = yearlyAnalysis[29] || {};
-  const breakEvenSensitivity = {
-    year1CostDiff: year1Data.costDiff || 0,
-    ownerAdvantageYear30: year30Data.advantage || 0,
-    appreciationNeeded: breakEvenYear === 'Never' && year30Data.renterWealth > year30Data.ownerWealth
-      ? ((year30Data.renterWealth / homePrice) ** (1/30) - 1) * 100 // What appreciation would match
-      : null,
-    rentNeeded: breakEvenYear === 'Never' && year1Data.costDiff > 0
-      ? monthlyRent + (year1Data.costDiff / 12) // What rent would make costs equal
-      : null,
-    subjectToNIIT,
-    niitRate,
-    afterNIITReturn
-  };
-  
-  return {
-    homePrice,
-    totalDown: totalEquityInput,
-    cashDown,
-    marginLoan,
-    helocAmount: actualHELOC,
-    mortgageLoan: isCashOutRefi ? 0 : mortgageLoan,
-    // Cash-out refinance
-    isCashOutRefi,
-    cashOutRefiAmount: actualCashOutAmount,
-    totalRefiLoan,
-    acquisitionDebt,
-    cashOutRefiClosingCosts,
-    needsMortgage,
-    monthlyPayment: amort.monthlyPayment + pmi.monthly,
-    pmi,
-    txCosts: { ...tx, buy: tx.buy + cashOutRefiClosingCosts },
-    amort,
-    // Interest details
-    mortgageInterestAnnual: acquisitionDebtInterest,
-    cashOutInterestAnnual,
-    marginInterestAnnual,
-    helocInterestAnnual,
-    totalInterestAnnual,
-    // Deductibility
-    deductibleMortgageInterest,
-    nonDeductibleMortgageInterest,
-    deductibleCashOutInterest,
-    nonDeductibleCashOutInterest,
-    deductibleMarginInterest,
-    nonDeductibleMarginInterest,
-    deductibleHELOCInterest,
-    nonDeductibleHELOCInterest,
-    investmentInterestDeduction,
-    // Investment income
-    totalInvestmentIncome,
-    totalDeductibleInvestmentIncome,
-    dividendYield,
-    // Tax
-    itemizedTotal,
-    stdDeduction,
-    shouldItemize,
-    caItemizedTotal,
-    caStdDeduction,
-    shouldItemizeCA,
-    saltCapped,
-    saltLost,
-    federalMortgageTaxBenefit,
-    caMortgageTaxBenefit,
-    mortgageTaxBenefit,
-    investInterestTaxBenefit,
-    totalTaxBenefit,
-    federalDeductibleMortgageInterest,
-    caDeductibleMortgageInterest,
-    // Effective rates
-    mortgageEffectiveRate,
-    cashOutEffectiveRate,
-    marginEffectiveRate,
-    helocEffectiveRate,
-    blendedEffectiveRate,
-    // Costs
-    nonRecovBreakdown,
-    propTax,
-    insurance,
-    maintenance,
-    // Analysis
-    yearlyAnalysis,
-    breakEvenYear,
-    breakEvenSensitivity,
-    ownerWealth20: yearlyAnalysis[19]?.ownerWealth || 0,
-    renterWealth20: yearlyAnalysis[19]?.renterWealth || 0
-  };
-};
-
-// Optimization engine - FIXED VERSION
-const runOptimization = (params) => {
-  const { homePrice, totalSavings, stockPortfolio, mortgageRate, cashOutRefiRate = 0.0675, loanTerm, appreciationRate, investmentReturn, dividendYield = 0.02, monthlyRent, rentGrowthRate = 0.03, marginRate, helocRate, fedRate, caRate, stateTax, stdDeduction, minBuffer, filingStatus = 'married', grossIncome = 0 } = params;
-  
-  const results = [];
-  const maxMarginPct = 0.30;
-  
-  // Strategy 1: Traditional (cash down + mortgage)
-  for (const dpPct of [0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40, 0.50]) {
-    const cashDown = homePrice * dpPct;
-    const scenario = calcScenario({
-      homePrice, cashDown, marginLoan: 0, helocAmount: 0,
-      mortgageRate, loanTerm, appreciationRate, investmentReturn, dividendYield, monthlyRent, rentGrowthRate,
-      marginRate, helocRate, fedRate, caRate, stateTax, stdDeduction, filingStatus, grossIncome
-    });
-    
-    const remaining = totalSavings - cashDown - scenario.txCosts.buy;
-    if (remaining >= minBuffer && cashDown <= totalSavings - minBuffer) {
-      results.push({ 
-        ...scenario, 
-        strategy: 'Traditional', 
-        strategyDesc: `${(dpPct*100).toFixed(0)}% cash down + Mortgage`, 
-        remaining, 
-        riskLevel: 'Low', 
-        dpPct: dpPct * 100 
-      });
-    }
-  }
-  
-  // Strategy 2: Margin + Mortgage (use margin for part of down payment)
-  for (const dpPct of [0.20, 0.25, 0.30, 0.35, 0.40, 0.50]) {
-    for (const marginPct of [0.10, 0.15, 0.20, 0.25, 0.30]) {
-      const marginLoan = stockPortfolio * marginPct;
-      const totalDown = homePrice * dpPct;
-      const cashDown = Math.max(0, totalDown - marginLoan);
-      
-      if (cashDown > totalSavings - minBuffer) continue;
-      if (marginLoan > stockPortfolio * maxMarginPct) continue;
-      
-      const scenario = calcScenario({
-        homePrice, cashDown, marginLoan, helocAmount: 0,
-        mortgageRate, loanTerm, appreciationRate, investmentReturn, dividendYield, monthlyRent,
-        marginRate, helocRate, fedRate, caRate, stateTax, stdDeduction, filingStatus, grossIncome
-      });
-      
-      const remaining = totalSavings - cashDown - scenario.txCosts.buy;
-      if (remaining >= minBuffer) {
-        results.push({ 
-          ...scenario, 
-          strategy: 'Margin + Mortgage', 
-          strategyDesc: `${fmtPctWhole(marginPct*100)} margin + cash → ${(dpPct*100).toFixed(0)}% down`, 
-          remaining, 
-          riskLevel: marginPct > 0.20 ? 'Medium-High' : 'Medium', 
-          dpPct: dpPct * 100 
-        });
-      }
-    }
-  }
-  
-  // Strategy 3: Full Cash Purchase + HELOC
-  // This requires: cash + margin >= homePrice
-  const maxMargin = stockPortfolio * maxMarginPct;
-  const canBuyCash = totalSavings + maxMargin >= homePrice;
-  
-  if (canBuyCash) {
-    for (const marginPct of [0, 0.10, 0.15, 0.20, 0.25, 0.30]) {
-      const marginLoan = stockPortfolio * marginPct;
-      const cashNeeded = homePrice - marginLoan;
-      
-      if (cashNeeded > totalSavings) continue;
-      
-      // Test different HELOC amounts (HELOC gives cash back!)
-      for (const helocPct of [0.30, 0.40, 0.50, 0.60, 0.70, 0.80]) {
-        const helocAmount = homePrice * helocPct;
-        
-        const scenario = calcScenario({
-          homePrice, cashDown: cashNeeded, marginLoan, helocAmount,
-          mortgageRate, loanTerm, appreciationRate, investmentReturn, dividendYield, monthlyRent,
-          marginRate, helocRate, fedRate, caRate, stateTax, stdDeduction, filingStatus, grossIncome
-        });
-        
-        // Remaining = what you started with - cash used - closing costs + HELOC proceeds
-        const remaining = totalSavings - cashNeeded - scenario.txCosts.buy + helocAmount;
-        
-        if (remaining >= minBuffer) {
-          const stratName = marginLoan > 0 ? 'Margin + Cash + HELOC' : 'Cash + HELOC';
-          results.push({ 
-            ...scenario, 
-            strategy: stratName, 
-            strategyDesc: `${marginLoan > 0 ? `${fmtPctWhole(marginPct*100)} margin + ` : ''}Full cash + ${(helocPct*100).toFixed(0)}% HELOC`, 
-            remaining, 
-            riskLevel: marginPct > 0.20 ? 'High' : marginLoan > 0 ? 'Medium-High' : 'Medium', 
-            dpPct: 100 
-          });
-        }
-      }
-    }
-  }
-
-  // Strategy 4: Traditional Mortgage + Cash-Out Refinance
-  // Buy with mortgage, then immediately do cash-out refi to extract equity for investment
-  // Pros: Fixed rate (vs HELOC variable), interest tracing for investment deduction
-  // Cons: Replaces original mortgage rate, higher closing costs than HELOC
-  for (const dpPct of [0.20, 0.25, 0.30, 0.35, 0.40]) {
-    for (const cashOutPct of [0.20, 0.30, 0.40, 0.50]) {
-      const cashDown = homePrice * dpPct;
-      if (cashDown > totalSavings - minBuffer) continue;
-
-      const baseMortgage = homePrice - cashDown;
-      const cashOutAmount = homePrice * cashOutPct;
-      const maxLTV = 0.80; // Most lenders cap at 80% LTV for cash-out refi
-
-      // Total loan after refi must be <= 80% of home value
-      if ((baseMortgage + cashOutAmount) / homePrice > maxLTV) continue;
-
-      const scenario = calcScenario({
-        homePrice, cashDown, marginLoan: 0, helocAmount: 0,
-        cashOutRefiAmount: cashOutAmount, cashOutRefiRate,
-        mortgageRate, loanTerm, appreciationRate, investmentReturn, dividendYield, monthlyRent,
-        marginRate, helocRate, fedRate, caRate, stateTax, stdDeduction, filingStatus, grossIncome
-      });
-
-      // Remaining = savings - down payment - closing costs + cash-out proceeds
-      const remaining = totalSavings - cashDown - scenario.txCosts.buy + cashOutAmount;
-
-      if (remaining >= minBuffer) {
-        results.push({
-          ...scenario,
-          strategy: 'Cash-Out Refi',
-          strategyDesc: `${(dpPct*100).toFixed(0)}% down + ${(cashOutPct*100).toFixed(0)}% cash-out refi`,
-          remaining,
-          riskLevel: 'Medium', // Fixed rate is less risky than HELOC variable
-          dpPct: dpPct * 100
-        });
-      }
-    }
-  }
-
-  // Score and rank - FIXED to use advantage (owner - renter) not just owner wealth
-  const scored = results.map(r => {
-    const advantage20 = r.ownerWealth20 - r.renterWealth20;
-    const advantageScore = advantage20 / 500000; // Positive = buying better, scaled
-    const breakEvenScore = r.breakEvenYear === 'Never' ? -3 : (30 - r.breakEvenYear) / 30 * 3;
-    const riskScore = r.riskLevel === 'Low' ? 1.5 : r.riskLevel === 'Medium' ? 1 : r.riskLevel === 'Medium-High' ? 0.5 : 0;
-    const effectiveRateScore = (0.08 - r.blendedEffectiveRate) * 20; // Lower rate = better
-    const bufferScore = Math.min(r.remaining / minBuffer, 2) * 0.5; // More buffer = slightly better
-
-    return {
-      ...r,
-      advantage20,
-      score: advantageScore * 0.4 + breakEvenScore * 0.25 + riskScore * 0.1 + effectiveRateScore * 0.15 + bufferScore * 0.1
-    };
-  });
-  
-  scored.sort((a, b) => b.score - a.score);
-  
-  // Calculate what's needed for strategies that aren't viable
-  const cashNeededForFullCash = homePrice - maxMargin;
-  const additionalNeeded = Math.max(0, cashNeededForFullCash - totalSavings + minBuffer);
-  
-  return {
-    allResults: scored,
-    optimal: scored[0] || null,
-    topFive: scored.slice(0, 5),
-    canBuyCash,
-    additionalNeeded,
-    diagnostics: {
-      totalSavings,
-      maxMargin,
-      totalAvailable: totalSavings + maxMargin,
-      homePrice,
-      gap: homePrice - (totalSavings + maxMargin)
-    }
-  };
-};
-
-// Affordability calculator - closed-form solution (all costs linear in home price)
-// Single 43% DTI ceiling (max lender approval), 4 leverage levels
-const calcAffordability = ({ grossIncome, totalSavings, mortgageRate, loanTerm, minBuffer, monthlyHOA = 0, monthlyOtherDebt = 0, monthlyRent = 0, effectiveTaxRate = 0.45, targetTakeHomePct = null }) => {
-  const DTI_CEILING = 0.43; // Max most lenders approve
-  const DP_OPTIONS = [0.05, 0.10, 0.20, 0.30, 0.50];
-  const rate = mortgageRate / 100;
-  const mr = rate / 12;
-  const n = loanTerm * 12;
-  const insuranceRate = 0.0035;
-  const pmiRate = 0.005;
-  const monthlyTakeHome = grossIncome * (1 - effectiveTaxRate) / 12;
-  const dtiMax = (grossIncome * DTI_CEILING / 12) - monthlyOtherDebt;
-  const maxMonthlyHousing = targetTakeHomePct
-    ? Math.min(targetTakeHomePct * monthlyTakeHome, dtiMax)
-    : dtiMax;
-
-  const options = DP_OPTIONS.map(dpPct => {
-    if (maxMonthlyHousing <= 0 || grossIncome <= 0) return { dpPct, maxPrice: 0, monthlyPITI: 0, cashNeeded: 0, remaining: 0, limitedBy: 'income', takeHomePct: 0, vsRent: 0, bufferMonths: 0, maxPriceByIncome: 0, monthlyBreakdown: { pi: 0, tax: 0, insurance: 0, pmi: 0, hoa: 0 } };
-
-    const loanFrac = 1 - dpPct;
-    const piFactor = loanFrac > 0 ? (mr === 0 ? loanFrac / n : loanFrac * (mr * Math.pow(1 + mr, n)) / (Math.pow(1 + mr, n) - 1)) : 0;
-    const taxFactor = SF.propTaxRate / 12;
-    const insFactor = insuranceRate / 12;
-    const pmiFactor = loanFrac > 0.80 ? (loanFrac * pmiRate / 12) : 0;
-    const perDollarCost = piFactor + taxFactor + insFactor + pmiFactor;
-    const fixedMonthly = monthlyHOA + (SF.parcelTax / 12);
-
-    const maxPriceByIncome = perDollarCost > 0 ? (maxMonthlyHousing - fixedMonthly) / perDollarCost : 0;
-
-    const availableCash = totalSavings - minBuffer;
-    const closingFactor = SF.closeBuy + SF.transferTax + loanFrac * 0.005 + 0.003;
-    const cashPerDollar = dpPct + closingFactor;
-    const fixedClosing = 2500;
-    const maxPriceBySavings = cashPerDollar > 0 ? (availableCash - fixedClosing) / cashPerDollar : 0;
-
-    const limitedBy = maxPriceByIncome <= maxPriceBySavings ? 'income' : 'savings';
-    const maxPrice = Math.max(0, Math.floor(Math.min(maxPriceByIncome, maxPriceBySavings)));
-
-    const loan = maxPrice * loanFrac;
-    const pi = loanFrac > 0 ? calcMonthly(loan, rate, loanTerm) : 0;
-    const tax = maxPrice * SF.propTaxRate / 12;
-    const insurance = maxPrice * insuranceRate / 12;
-    const pmi = loanFrac > 0.80 ? loan * pmiRate / 12 : 0;
-    const monthlyPITI = pi + tax + insurance + pmi + monthlyHOA;
-
-    const txCosts = calcTxCosts(maxPrice, loan);
-    const cashNeeded = maxPrice * dpPct + txCosts.buy;
-    const remaining = totalSavings - cashNeeded;
-
-    const takeHomePct = monthlyTakeHome > 0 ? monthlyPITI / monthlyTakeHome : 0;
-    const vsRent = monthlyPITI - monthlyRent;
-    const bufferMonths = monthlyPITI > 0 ? remaining / monthlyPITI : 0;
-
-    return { dpPct, maxPrice, monthlyPITI, cashNeeded, remaining, limitedBy, takeHomePct, vsRent, bufferMonths, maxPriceByIncome: Math.floor(Math.max(0, maxPriceByIncome)), monthlyBreakdown: { pi, tax, insurance, pmi, hoa: monthlyHOA } };
-  });
-
-  return { options, monthlyTakeHome };
-};
-
-// Format helpers
-const fmt$ = (v) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(v || 0);
-const fmtPct = (v) => `${((v || 0) * 100).toFixed(2)}%`;
-const fmtPctWhole = (v) => `${(v || 0).toFixed(0)}%`;
-const fmtNum = (v) => new Intl.NumberFormat('en-US').format(v || 0);
-
-// Input component with formatting and validation
+// Input components (UI-only, remain in main file)
 const CurrencyInput = ({ value, onChange, label, min = 0, max = Infinity, style, error, onValidate }) => {
   const [focused, setFocused] = React.useState(false);
   const [tempValue, setTempValue] = React.useState('');
@@ -998,19 +321,21 @@ export default function HomePurchaseOptimizer() {
   const [affSelectedDpPct, setAffSelectedDpPct] = useState(0.20);
   const [affTargetComfort, setAffTargetComfort] = useState(null); // null = max, or 0.20/0.30/0.40/0.50/0.75
 
-  const [activeTab, setActiveTab] = useState('optimize');
+  const [activeTab, setActiveTab] = useState('afford');
   const [optimizationResult, setOptimizationResult] = useState(null);
   const [openInfoBoxes, setOpenInfoBoxes] = useState({});
   const [showOptimizeDetails, setShowOptimizeDetails] = useState(false);
   
   // CTA-related state
   const [showSensitivity, setShowSensitivity] = useState(false);
+  const [whatIfAppreciation, setWhatIfAppreciation] = useState(null); // null = use default
 
   // Preset state
   const [activePreset, setActivePreset] = useState(null);
 
   // Expert/Quick Mode state
-  const [isExpertMode, setIsExpertMode] = useState(true);
+  const [isExpertMode, setIsExpertMode] = useState(false);
+  const [showAdvancedInputs, setShowAdvancedInputs] = useState(false);
 
   // Custom assumptions state (editable SF constants)
   const [customAssumptions, setCustomAssumptions] = useState({
@@ -1109,6 +434,8 @@ export default function HomePurchaseOptimizer() {
   const router = useRouter();
   const hasHydrated = useRef(false);
   const [linkCopied, setLinkCopied] = useState(false);
+  const [summaryCopied, setSummaryCopied] = useState(false);
+  const [affordCopied, setAffordCopied] = useState(false);
 
   // State setters map for hydration
   const stateSetters = useMemo(() => ({
@@ -1221,7 +548,7 @@ export default function HomePurchaseOptimizer() {
     });
   }, [currentState, defaults]);
 
-  
+
   const toggleInfo = (id) => setOpenInfoBoxes(p => ({ ...p, [id]: !p[id] }));
   
   const stateTax = useMemo(() => calcCAStateTax(grossIncome, filingStatus), [grossIncome, filingStatus]);
@@ -1331,11 +658,11 @@ export default function HomePurchaseOptimizer() {
     slider: { width: '100%', marginTop: '8px', accentColor: '#f97316' },
     btn: { width: '100%', padding: '16px', fontSize: '1.1rem', fontWeight: '600', border: 'none', borderRadius: '12px', cursor: 'pointer', marginTop: '20px', background: 'linear-gradient(135deg, #f97316, #eab308)', color: '#fff' },
     auto: { background: 'rgba(249,115,22,0.08)', border: '1px solid rgba(249,115,22,0.2)', borderRadius: '8px', padding: '10px 12px', marginBottom: '12px' },
-    tabs: { display: 'flex', gap: '8px', marginBottom: '24px', flexWrap: 'wrap' },
-    tab: { padding: '12px 20px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontSize: '0.85rem', fontWeight: '500' },
-    tabActive: { background: 'linear-gradient(135deg, #f97316, #eab308)', color: '#fff' },
+    tabs: { display: 'flex', gap: '8px', marginBottom: '24px', flexWrap: 'wrap', paddingBottom: '16px', borderBottom: '1px solid rgba(255,255,255,0.06)' },
+    tab: { padding: '12px 20px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontSize: '0.85rem', fontWeight: '500', transition: 'all 0.2s ease' },
+    tabActive: { background: 'linear-gradient(135deg, #f97316, #eab308)', color: '#fff', boxShadow: '0 2px 12px rgba(249,115,22,0.3)' },
     tabInactive: { background: 'rgba(255,255,255,0.05)', color: '#8b8ba7' },
-    card: { background: 'rgba(255,255,255,0.03)', borderRadius: '16px', padding: '24px', border: '1px solid rgba(255,255,255,0.06)', marginBottom: '20px' },
+    card: { background: 'rgba(255,255,255,0.03)', borderRadius: '16px', padding: '24px', border: '1px solid rgba(255,255,255,0.06)', marginBottom: '20px', transition: 'border-color 0.2s ease' },
     planCard: { background: 'linear-gradient(135deg, rgba(249,115,22,0.15), rgba(234,179,8,0.1))', borderRadius: '20px', padding: '32px', border: '2px solid rgba(249,115,22,0.4)', marginBottom: '24px' },
     metrics: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '24px' },
     metric: { background: 'rgba(0,0,0,0.2)', borderRadius: '12px', padding: '18px', textAlign: 'center' },
@@ -1462,6 +789,100 @@ export default function HomePurchaseOptimizer() {
   const estimatedTakeHome = useMemo(() => {
     return Math.round(grossIncome * (1 - estEffectiveTaxRate) / 12);
   }, [grossIncome, estEffectiveTaxRate]);
+
+  // Copy formatted results summary to clipboard
+  const copyResultsSummary = useCallback(() => {
+    const opt = optimizationResult?.optimal;
+    if (!opt) return;
+
+    const nr = opt.nonRecovBreakdown;
+    const monthlyNetCost = nr.netTotal / 12;
+    const takeHome = estimatedTakeHome;
+    const housingPct = takeHome > 0 ? (monthlyNetCost / takeHome * 100).toFixed(0) : '?';
+    const advantage10 = opt.ownerWealth10 - opt.renterWealth10;
+    const comfortLabel = (pct) => {
+      if (pct <= 20) return 'Excellent';
+      if (pct <= 30) return 'Comfortable';
+      if (pct <= 40) return 'Stretched';
+      if (pct <= 50) return 'Heavy';
+      return 'Extreme';
+    };
+
+    const lines = [
+      `HOME PURCHASE ANALYSIS`,
+      `═══════════════════════`,
+      ``,
+      `Home Price: ${fmt$(homePrice)}`,
+      `Strategy: ${opt.strategy} (${fmtPctWhole(opt.dpPct)} down)`,
+      `Down Payment: ${fmt$(opt.downPayment)}`,
+      ``,
+      `VERDICT: ${advantage10 > 500000 ? 'Strong Buy' : advantage10 > 100000 ? 'Buy' : advantage10 > -100000 ? 'Close Call' : advantage10 > -500000 ? 'Consider Renting' : 'Rent'}`,
+      `10-Year Advantage vs Renting: ${advantage10 >= 0 ? '+' : ''}${fmt$(advantage10)}`,
+      `Break-Even: ${opt.breakEvenYear === 'Never' ? 'Never' : `Year ${opt.breakEvenYear}`}`,
+      ``,
+      `MONTHLY COST`,
+      `Net Housing Cost: ${fmt$(monthlyNetCost)}/mo`,
+      `Current Rent: ${fmt$(monthlyRent)}/mo`,
+      `Housing as % of Take-Home: ${housingPct}% (${comfortLabel(Number(housingPct))})`,
+      ``,
+      `TAX BENEFITS`,
+      `Annual Tax Savings: ${fmt$(opt.totalTaxBenefit)}/yr`,
+      `Effective Tax Rate: ${fmtPct(estEffectiveTaxRate)}`,
+      ``,
+      `ASSUMPTIONS`,
+      `Mortgage Rate: ${mortgageRate}%  |  Home Appreciation: ${homeAppreciation}%`,
+      `Investment Return: ${investmentReturn}%  |  Loan Term: ${loanTerm} years`,
+      ``,
+      `Generated by Home Purchase Optimizer`,
+      typeof window !== 'undefined' ? window.location.href : '',
+    ];
+
+    navigator.clipboard.writeText(lines.join('\n')).then(() => {
+      setSummaryCopied(true);
+      setTimeout(() => setSummaryCopied(false), 2000);
+    });
+  }, [optimizationResult, homePrice, monthlyRent, estimatedTakeHome, estEffectiveTaxRate, mortgageRate, homeAppreciation, investmentReturn, loanTerm]);
+
+  // Copy affordability summary to clipboard
+  const copyAffordabilitySummary = useCallback(() => {
+    const { options, monthlyTakeHome: mth } = affordability;
+    const best = options.find(o => o.dpPct === 0.20 && o.remaining >= 0 && o.maxPrice > 0)
+      || options.find(o => o.remaining >= 0 && o.maxPrice > 0);
+    if (!best) return;
+    const comfortLabel = (pct) => {
+      if (pct <= 0.20) return 'Excellent';
+      if (pct <= 0.30) return 'Comfortable';
+      if (pct <= 0.40) return 'Stretched';
+      if (pct <= 0.50) return 'Heavy';
+      return 'Unsustainable';
+    };
+    const lines = [
+      `HOME AFFORDABILITY ANALYSIS`,
+      `═══════════════════════════`,
+      ``,
+      `Recommended Price: ${fmt$(best.maxPrice)} (${fmtPctWhole(best.dpPct * 100)} down)`,
+      `Monthly Payment: ${fmt$(best.monthlyPITI)}/mo`,
+      `Comfort Level: ${comfortLabel(best.takeHomePct)} (${fmtPctWhole(best.takeHomePct * 100)} of take-home)`,
+      `Cash Needed: ${fmt$(best.cashNeeded)}  |  Remaining: ${fmt$(best.remaining)}`,
+      `Limited By: ${best.limitedBy === 'income' ? 'Income (DTI)' : 'Savings'}`,
+      ``,
+      `ALL OPTIONS`,
+      ...options.filter(o => o.maxPrice > 0).map(o =>
+        `  ${fmtPctWhole(o.dpPct * 100)} down → ${fmt$(o.maxPrice)} (${fmt$(o.monthlyPITI)}/mo, ${comfortLabel(o.takeHomePct)})`
+      ),
+      ``,
+      `YOUR NUMBERS`,
+      `Gross Income: ${fmt$(grossIncome)}  |  Take-Home: ~${fmt$(mth)}/mo`,
+      `Savings: ${fmt$(totalSavings)}  |  Mortgage Rate: ${mortgageRate}%`,
+      ``,
+      `Generated by Home Purchase Optimizer`,
+      typeof window !== 'undefined' ? window.location.href : '',
+    ];
+    navigator.clipboard.writeText(lines.join('\n')).then(() => {
+      setAffordCopied(true);
+      setTimeout(() => setAffordCopied(false), 2000);
+    });
+  }, [affordability, grossIncome, totalSavings, mortgageRate]);
 
   // Feature 1: Total Wealth Impact Summary
   const renderWealthImpactSummary = (opt) => {
@@ -1612,7 +1033,7 @@ export default function HomePurchaseOptimizer() {
         </div>
 
         {/* Side-by-side comparison */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '20px' }}>
+        <div className="hpo-cash-flow-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '20px' }}>
           {/* Current Situation */}
           <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: '12px', padding: '16px', border: '1px solid rgba(255,255,255,0.08)' }}>
             <div style={{ fontSize: '0.75rem', color: '#8b8ba7', textTransform: 'uppercase', marginBottom: '12px' }}>Current (Renting)</div>
@@ -1653,6 +1074,14 @@ export default function HomePurchaseOptimizer() {
           </div>
           <div style={{ fontSize: '0.8rem', color: '#8b8ba7', marginTop: '4px' }}>
             ({fmt$(Math.abs(cashFlowChange) * 12)}/year)
+          </div>
+        </div>
+
+        {/* Opportunity Cost Note */}
+        <div style={{ background: 'rgba(251,146,60,0.08)', border: '1px solid rgba(251,146,60,0.2)', borderRadius: '12px', padding: '14px 18px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '14px' }}>
+          <div style={{ fontSize: '1.2rem' }}>💰</div>
+          <div style={{ fontSize: '0.82rem', color: '#d0d0e0', lineHeight: '1.5' }}>
+            <strong style={{ color: '#fb923c' }}>Hidden cost:</strong> Your {fmt$(opt.totalDown)} down payment could earn ~{fmt$(opt.totalDown * (investmentReturn / 100))}/yr ({investmentReturn}% return) if invested instead. The optimizer accounts for this when comparing buying vs renting.
           </div>
         </div>
 
@@ -1801,11 +1230,28 @@ export default function HomePurchaseOptimizer() {
       return (
         <div style={{ textAlign: 'center', padding: '60px 40px' }}>
           <div style={{ fontSize: '4rem', marginBottom: '20px' }}>🏠</div>
-          <h2 style={{ fontSize: '1.5rem', fontWeight: '500', marginBottom: '16px', color: '#fff' }}>Ready to Find Your Optimal Strategy</h2>
-          <p style={{ color: '#8b8ba7', marginBottom: '32px', maxWidth: '500px', margin: '0 auto 32px' }}>
-            Enter your details, then click below. Tests hundreds of combinations to find your best strategy.
+          <h2 style={{ fontSize: '1.5rem', fontWeight: '500', marginBottom: '16px', color: '#fff' }}>Find Your Best Purchase Strategy</h2>
+          <p style={{ color: '#c0c0d0', marginBottom: '24px', maxWidth: '550px', margin: '0 auto 24px', lineHeight: '1.7' }}>
+            The optimizer tests hundreds of combinations of down payment amounts, margin loans, HELOCs, and mortgage structures to find the strategy that <strong style={{ color: '#4ade80' }}>maximizes your 10-year wealth</strong> while managing risk.
           </p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', maxWidth: '500px', margin: '0 auto 28px' }}>
+            <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '10px', padding: '14px' }}>
+              <div style={{ fontSize: '0.65rem', color: '#8b8ba7', textTransform: 'uppercase', marginBottom: '4px' }}>Home Price</div>
+              <div style={{ fontSize: '1.1rem', fontWeight: '600', color: '#fff' }}>{fmt$(homePrice)}</div>
+            </div>
+            <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '10px', padding: '14px' }}>
+              <div style={{ fontSize: '0.65rem', color: '#8b8ba7', textTransform: 'uppercase', marginBottom: '4px' }}>Available Cash</div>
+              <div style={{ fontSize: '1.1rem', fontWeight: '600', color: '#fff' }}>{fmt$(totalSavings)}</div>
+            </div>
+            <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '10px', padding: '14px' }}>
+              <div style={{ fontSize: '0.65rem', color: '#8b8ba7', textTransform: 'uppercase', marginBottom: '4px' }}>Monthly Rent</div>
+              <div style={{ fontSize: '1.1rem', fontWeight: '600', color: '#fff' }}>{fmt$(monthlyRent)}/mo</div>
+            </div>
+          </div>
           <button style={{ ...s.btn, width: 'auto', padding: '16px 48px' }} onClick={handleOptimize}>🚀 Run Optimization</button>
+          <p style={{ color: '#8b8ba7', fontSize: '0.78rem', marginTop: '12px' }}>
+            Not sure about the home price? Start with the <button onClick={() => setActiveTab('afford')} style={{ background: 'none', border: 'none', color: '#f97316', cursor: 'pointer', fontSize: '0.78rem', textDecoration: 'underline', padding: 0 }}>What Can I Buy?</button> tab first.
+          </p>
         </div>
       );
     }
@@ -1897,6 +1343,9 @@ export default function HomePurchaseOptimizer() {
     };
     const comfort = getComfort(housingPctOfTakeHome);
 
+    // Opportunity cost of down payment
+    const annualOpportunityCost = opt.totalDown * (investmentReturn / 100);
+
     // Generate verdict
     const getVerdict = () => {
       if (advantage10 > 500000) return { emoji: '🎯', verdict: 'Strong Buy', color: '#22c55e', desc: 'Buying clearly wins financially' };
@@ -1923,30 +1372,41 @@ export default function HomePurchaseOptimizer() {
           <div style={{ fontSize: '2rem', fontWeight: '700', color: verdict.color, marginBottom: '4px' }}>{verdict.verdict}</div>
           <div style={{ fontSize: '1rem', color: '#c0c0d0', marginBottom: '16px' }}>{verdict.desc}</div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginTop: '16px' }}>
+          <div className="hpo-verdict-metrics" style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '10px', marginTop: '16px' }}>
             <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '10px', padding: '12px' }}>
-              <div style={{ fontSize: '0.7rem', color: '#8b8ba7', marginBottom: '4px' }}>10-Year Advantage</div>
-              <div style={{ fontSize: '1.1rem', fontWeight: '700', color: advantage10 >= 0 ? '#4ade80' : '#f87171' }}>
+              <div style={{ fontSize: '0.65rem', color: '#8b8ba7', marginBottom: '4px' }}>10-Year Advantage</div>
+              <div style={{ fontSize: '1rem', fontWeight: '700', color: advantage10 >= 0 ? '#4ade80' : '#f87171' }}>
                 {advantage10 >= 0 ? '+' : ''}{fmt$(advantage10)}
               </div>
+              <div style={{ fontSize: '0.55rem', color: '#666', marginTop: '3px' }}>Wealth gap: buying vs renting</div>
             </div>
             <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '10px', padding: '12px' }}>
-              <div style={{ fontSize: '0.7rem', color: '#8b8ba7', marginBottom: '4px' }}>Monthly vs Rent</div>
-              <div style={{ fontSize: '1.1rem', fontWeight: '700', color: monthlyVsRent <= 0 ? '#4ade80' : '#f87171' }}>
+              <div style={{ fontSize: '0.65rem', color: '#8b8ba7', marginBottom: '4px' }}>Monthly vs Rent</div>
+              <div style={{ fontSize: '1rem', fontWeight: '700', color: monthlyVsRent <= 0 ? '#4ade80' : '#f87171' }}>
                 {monthlyVsRent > 0 ? '+' : ''}{fmt$(monthlyVsRent)}
               </div>
+              <div style={{ fontSize: '0.55rem', color: '#666', marginTop: '3px' }}>{monthlyVsRent > 0 ? 'More' : 'Less'} than current rent</div>
             </div>
             <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '10px', padding: '12px' }}>
-              <div style={{ fontSize: '0.7rem', color: '#8b8ba7', marginBottom: '4px' }}>Break-Even</div>
-              <div style={{ fontSize: '1.1rem', fontWeight: '700', color: '#fff' }}>
+              <div style={{ fontSize: '0.65rem', color: '#8b8ba7', marginBottom: '4px' }}>Break-Even</div>
+              <div style={{ fontSize: '1rem', fontWeight: '700', color: '#fff' }}>
                 {opt.breakEvenYear === 'Never' ? 'Never' : `Year ${opt.breakEvenYear}`}
               </div>
+              <div style={{ fontSize: '0.55rem', color: '#666', marginTop: '3px' }}>When buying beats renting</div>
             </div>
             <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '10px', padding: '12px' }}>
-              <div style={{ fontSize: '0.7rem', color: '#8b8ba7', marginBottom: '4px' }}>Tax Savings</div>
-              <div style={{ fontSize: '1.1rem', fontWeight: '700', color: '#4ade80' }}>
+              <div style={{ fontSize: '0.65rem', color: '#8b8ba7', marginBottom: '4px' }}>Tax Savings</div>
+              <div style={{ fontSize: '1rem', fontWeight: '700', color: '#4ade80' }}>
                 {fmt$(opt.totalTaxBenefit)}/yr
               </div>
+              <div style={{ fontSize: '0.55rem', color: '#666', marginTop: '3px' }}>From mortgage deductions</div>
+            </div>
+            <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '10px', padding: '12px' }}>
+              <div style={{ fontSize: '0.65rem', color: '#8b8ba7', marginBottom: '4px' }}>Opportunity Cost</div>
+              <div style={{ fontSize: '1rem', fontWeight: '700', color: '#fb923c' }}>
+                {fmt$(annualOpportunityCost)}/yr
+              </div>
+              <div style={{ fontSize: '0.55rem', color: '#666', marginTop: '3px' }}>{fmt$(opt.totalDown)} if invested</div>
             </div>
           </div>
           
@@ -1972,10 +1432,38 @@ export default function HomePurchaseOptimizer() {
           >
             ✨ Use This Strategy → Customize in Manual Tab
           </button>
+
+          {/* Share buttons */}
+          <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', marginTop: '12px' }}>
+            <button
+              onClick={copyResultsSummary}
+              style={{
+                padding: '8px 16px', borderRadius: '8px', border: 'none', cursor: 'pointer',
+                fontSize: '0.8rem', fontWeight: '500', transition: 'all 0.2s',
+                background: summaryCopied ? 'rgba(74,222,128,0.15)' : 'rgba(255,255,255,0.08)',
+                color: summaryCopied ? '#4ade80' : '#8b8ba7',
+                border: summaryCopied ? '1px solid rgba(74,222,128,0.3)' : '1px solid rgba(255,255,255,0.1)',
+              }}
+            >
+              {summaryCopied ? '✓ Copied!' : '📋 Copy Summary'}
+            </button>
+            <button
+              onClick={copyShareLink}
+              style={{
+                padding: '8px 16px', borderRadius: '8px', border: 'none', cursor: 'pointer',
+                fontSize: '0.8rem', fontWeight: '500', transition: 'all 0.2s',
+                background: linkCopied ? 'rgba(74,222,128,0.15)' : 'rgba(255,255,255,0.08)',
+                color: linkCopied ? '#4ade80' : '#8b8ba7',
+                border: linkCopied ? '1px solid rgba(74,222,128,0.3)' : '1px solid rgba(255,255,255,0.1)',
+              }}
+            >
+              {linkCopied ? '✓ Copied!' : '🔗 Share Link'}
+            </button>
+          </div>
         </div>
 
         {/* AFFORDABILITY INDICATOR */}
-        <div style={{
+        <div className="hpo-affordability-indicator" style={{
           background: `linear-gradient(135deg, ${comfort.color}15, ${comfort.color}08)`,
           borderRadius: '16px', padding: '20px 24px', border: `2px solid ${comfort.color}40`, marginBottom: '24px',
           display: 'flex', alignItems: 'center', gap: '20px',
@@ -2009,120 +1497,29 @@ export default function HomePurchaseOptimizer() {
           </div>
         </div>
 
-        {/* DOWNSIDE RISK VISUALIZATION */}
-        <div style={{
-          background: 'linear-gradient(135deg, rgba(248,113,113,0.1), rgba(239,68,68,0.05))',
-          borderRadius: '16px',
-          padding: '20px 24px',
-          border: '1px solid rgba(248,113,113,0.3)',
-          marginBottom: '24px'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
-            <span style={{ fontSize: '1.5rem' }}>⚠️</span>
-            <div>
-              <div style={{ color: '#f87171', fontWeight: '600', fontSize: '1rem' }}>Downside Scenario Analysis</div>
-              <div style={{ color: '#8b8ba7', fontSize: '0.8rem' }}>What if things go wrong?</div>
-            </div>
+        {/* Cross-tab navigation */}
+        {isExpertMode ? (
+          <div style={{ display: 'flex', justifyContent: 'center', gap: '24px', marginBottom: '24px', flexWrap: 'wrap' }}>
+            <button onClick={() => setActiveTab('holding')} style={{ background: 'none', border: 'none', color: '#60a5fa', cursor: 'pointer', fontSize: '0.82rem', padding: 0 }}>
+              See year-by-year breakdown →
+            </button>
+            <button onClick={() => setActiveTab('sensitivity')} style={{ background: 'none', border: 'none', color: '#a78bfa', cursor: 'pointer', fontSize: '0.82rem', padding: 0 }}>
+              Test sensitivity to assumptions →
+            </button>
+            <button onClick={() => setActiveTab('tax')} style={{ background: 'none', border: 'none', color: '#fbbf24', cursor: 'pointer', fontSize: '0.82rem', padding: 0 }}>
+              View tax details →
+            </button>
           </div>
-          
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '16px' }}>
-            {/* Market Down 20% */}
-            <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '10px', padding: '14px' }}>
-              <div style={{ fontSize: '0.7rem', color: '#8b8ba7', textTransform: 'uppercase', marginBottom: '6px' }}>Portfolio -20%</div>
-              <div style={{ fontSize: '1.1rem', fontWeight: '600', color: '#f87171' }}>{fmt$(stockPortfolio * 0.8)}</div>
-              <div style={{ fontSize: '0.75rem', color: '#8b8ba7', marginTop: '4px' }}>
-                Loss: {fmt$(stockPortfolio * 0.2)}
-              </div>
-            </div>
-            
-            {/* Home Value Stagnant */}
-            <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '10px', padding: '14px' }}>
-              <div style={{ fontSize: '0.7rem', color: '#8b8ba7', textTransform: 'uppercase', marginBottom: '6px' }}>Home 0% Growth (5yr)</div>
-              <div style={{ fontSize: '1.1rem', fontWeight: '600', color: '#fbbf24' }}>{fmt$(homePrice)}</div>
-              <div style={{ fontSize: '0.75rem', color: '#8b8ba7', marginTop: '4px' }}>
-                vs {fmt$(homePrice * Math.pow(1.05, 5))} at 5%
-              </div>
-            </div>
-            
-            {/* Higher Rates */}
-            <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '10px', padding: '14px' }}>
-              <div style={{ fontSize: '0.7rem', color: '#8b8ba7', textTransform: 'uppercase', marginBottom: '6px' }}>Rates +200bps</div>
-              <div style={{ fontSize: '1.1rem', fontWeight: '600', color: '#fb923c' }}>{(mortgageRate + 2).toFixed(1)}%</div>
-              <div style={{ fontSize: '0.75rem', color: '#8b8ba7', marginTop: '4px' }}>
-                HELOC: {(helocRate + 2).toFixed(1)}%
-              </div>
-            </div>
+        ) : (
+          <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+            <button
+              onClick={() => setIsExpertMode(true)}
+              style={{ background: 'none', border: 'none', color: '#a78bfa', cursor: 'pointer', fontSize: '0.82rem', padding: 0 }}
+            >
+              Switch to Expert Mode for year-by-year analysis, sensitivity testing, and tax breakdown →
+            </button>
           </div>
-          
-          {/* Margin Call Risk */}
-          {opt.marginLoan > 0 && (
-            <div style={{
-              background: 'rgba(248,113,113,0.15)',
-              borderRadius: '10px',
-              padding: '14px',
-              marginBottom: '12px',
-              border: '1px solid rgba(248,113,113,0.3)'
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                <span style={{ fontSize: '1.1rem' }}>📉</span>
-                <span style={{ color: '#f87171', fontWeight: '600', fontSize: '0.9rem' }}>Margin Call Risk</span>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', fontSize: '0.85rem' }}>
-                <div>
-                  <div style={{ color: '#8b8ba7', marginBottom: '2px' }}>Current Margin Used</div>
-                  <div style={{ color: '#fff', fontWeight: '500' }}>{fmtPctWhole((opt.marginLoan / stockPortfolio) * 100)} ({fmt$(opt.marginLoan)})</div>
-                </div>
-                <div>
-                  <div style={{ color: '#8b8ba7', marginBottom: '2px' }}>Margin Call Threshold</div>
-                  <div style={{ color: '#fbbf24', fontWeight: '500' }}>~30% of portfolio</div>
-                </div>
-                <div>
-                  <div style={{ color: '#8b8ba7', marginBottom: '2px' }}>Portfolio Drop to Trigger</div>
-                  <div style={{ color: '#f87171', fontWeight: '500' }}>
-                    {stockPortfolio * 0.3 > opt.marginLoan 
-                      ? `>${fmtPctWhole(((stockPortfolio - (opt.marginLoan / 0.3)) / stockPortfolio) * 100)} drop`
-                      : 'Already at risk!'
-                    }
-                  </div>
-                </div>
-              </div>
-              {stockPortfolio * 0.3 > opt.marginLoan && (
-                <div style={{ marginTop: '10px', fontSize: '0.8rem', color: '#d0d0e0' }}>
-                  💡 Keep ~{fmt$(opt.marginLoan * 0.3)} in cash reserves to cover potential margin calls
-                </div>
-              )}
-            </div>
-          )}
-          
-          {/* Buy vs Rent Downside Comparison */}
-          <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '10px', padding: '14px' }}>
-            <div style={{ fontSize: '0.85rem', color: '#8b8ba7', fontWeight: '600', marginBottom: '10px' }}>Downside Comparison: Buy vs Rent</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-              <div>
-                <div style={{ color: '#f87171', fontWeight: '500', marginBottom: '6px' }}>If You Buy (Downside)</div>
-                <ul style={{ margin: 0, paddingLeft: '16px', color: '#c0c0d0', fontSize: '0.8rem', lineHeight: '1.6' }}>
-                  <li>Underwater mortgage if home drops 20%+</li>
-                  <li>Can't easily move for job opportunities</li>
-                  <li>Maintenance costs don't go away</li>
-                  {opt.marginLoan > 0 && <li>Margin call risk if market tanks</li>}
-                </ul>
-              </div>
-              <div>
-                <div style={{ color: '#60a5fa', fontWeight: '500', marginBottom: '6px' }}>If You Rent (Downside)</div>
-                <ul style={{ margin: 0, paddingLeft: '16px', color: '#c0c0d0', fontSize: '0.8rem', lineHeight: '1.6' }}>
-                  <li>Portfolio drops 20% = {fmt$(stockPortfolio * 0.2)} loss</li>
-                  <li>Rent increases ({rentGrowth}%/yr compounds)</li>
-                  <li>Landlord could sell/evict you</li>
-                  <li>No equity building</li>
-                </ul>
-              </div>
-            </div>
-          </div>
-          
-          <div style={{ marginTop: '12px', fontSize: '0.8rem', color: '#8b8ba7', fontStyle: 'italic' }}>
-            💡 Both paths have risks. Buying locks in housing costs but ties up capital. Renting maintains flexibility but exposes you to rent increases.
-          </div>
-        </div>
+        )}
 
         {/* Diagnostics - why certain strategies may not appear */}
         {diag && !optimizationResult.canBuyCash && (
@@ -2195,6 +1592,102 @@ export default function HomePurchaseOptimizer() {
               </ul>
             </div>
           )}
+        </div>
+
+        {/* DOWNSIDE RISK VISUALIZATION */}
+        <div style={{
+          background: 'linear-gradient(135deg, rgba(248,113,113,0.1), rgba(239,68,68,0.05))',
+          borderRadius: '16px',
+          padding: '20px 24px',
+          border: '1px solid rgba(248,113,113,0.3)',
+          marginBottom: '24px'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
+            <span style={{ fontSize: '1.5rem' }}>⚠️</span>
+            <div>
+              <div style={{ color: '#f87171', fontWeight: '600', fontSize: '1rem' }}>Downside Scenario Analysis</div>
+              <div style={{ color: '#8b8ba7', fontSize: '0.8rem' }}>What if things go wrong?</div>
+            </div>
+          </div>
+
+          <div className="hpo-risk-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '16px' }}>
+            <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '10px', padding: '14px' }}>
+              <div style={{ fontSize: '0.7rem', color: '#8b8ba7', textTransform: 'uppercase', marginBottom: '6px' }}>Portfolio -20%</div>
+              <div style={{ fontSize: '1.1rem', fontWeight: '600', color: '#f87171' }}>{fmt$(stockPortfolio * 0.8)}</div>
+              <div style={{ fontSize: '0.75rem', color: '#8b8ba7', marginTop: '4px' }}>Loss: {fmt$(stockPortfolio * 0.2)}</div>
+            </div>
+            <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '10px', padding: '14px' }}>
+              <div style={{ fontSize: '0.7rem', color: '#8b8ba7', textTransform: 'uppercase', marginBottom: '6px' }}>Home 0% Growth (5yr)</div>
+              <div style={{ fontSize: '1.1rem', fontWeight: '600', color: '#fbbf24' }}>{fmt$(homePrice)}</div>
+              <div style={{ fontSize: '0.75rem', color: '#8b8ba7', marginTop: '4px' }}>vs {fmt$(homePrice * Math.pow(1.05, 5))} at 5%</div>
+            </div>
+            <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '10px', padding: '14px' }}>
+              <div style={{ fontSize: '0.7rem', color: '#8b8ba7', textTransform: 'uppercase', marginBottom: '6px' }}>Rates +200bps</div>
+              <div style={{ fontSize: '1.1rem', fontWeight: '600', color: '#fb923c' }}>{(mortgageRate + 2).toFixed(1)}%</div>
+              <div style={{ fontSize: '0.75rem', color: '#8b8ba7', marginTop: '4px' }}>HELOC: {(helocRate + 2).toFixed(1)}%</div>
+            </div>
+          </div>
+
+          {opt.marginLoan > 0 && (
+            <div style={{ background: 'rgba(248,113,113,0.15)', borderRadius: '10px', padding: '14px', marginBottom: '12px', border: '1px solid rgba(248,113,113,0.3)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                <span style={{ fontSize: '1.1rem' }}>📉</span>
+                <span style={{ color: '#f87171', fontWeight: '600', fontSize: '0.9rem' }}>Margin Call Risk</span>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', fontSize: '0.85rem' }}>
+                <div>
+                  <div style={{ color: '#8b8ba7', marginBottom: '2px' }}>Current Margin Used</div>
+                  <div style={{ color: '#fff', fontWeight: '500' }}>{fmtPctWhole((opt.marginLoan / stockPortfolio) * 100)} ({fmt$(opt.marginLoan)})</div>
+                </div>
+                <div>
+                  <div style={{ color: '#8b8ba7', marginBottom: '2px' }}>Margin Call Threshold</div>
+                  <div style={{ color: '#fbbf24', fontWeight: '500' }}>~30% of portfolio</div>
+                </div>
+                <div>
+                  <div style={{ color: '#8b8ba7', marginBottom: '2px' }}>Portfolio Drop to Trigger</div>
+                  <div style={{ color: '#f87171', fontWeight: '500' }}>
+                    {stockPortfolio * 0.3 > opt.marginLoan
+                      ? `>${fmtPctWhole(((stockPortfolio - (opt.marginLoan / 0.3)) / stockPortfolio) * 100)} drop`
+                      : 'Already at risk!'
+                    }
+                  </div>
+                </div>
+              </div>
+              {stockPortfolio * 0.3 > opt.marginLoan && (
+                <div style={{ marginTop: '10px', fontSize: '0.8rem', color: '#d0d0e0' }}>
+                  Keep ~{fmt$(opt.marginLoan * 0.3)} in cash reserves to cover potential margin calls
+                </div>
+              )}
+            </div>
+          )}
+
+          <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '10px', padding: '14px' }}>
+            <div style={{ fontSize: '0.85rem', color: '#8b8ba7', fontWeight: '600', marginBottom: '10px' }}>Downside Comparison: Buy vs Rent</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+              <div>
+                <div style={{ color: '#f87171', fontWeight: '500', marginBottom: '6px' }}>If You Buy (Downside)</div>
+                <ul style={{ margin: 0, paddingLeft: '16px', color: '#c0c0d0', fontSize: '0.8rem', lineHeight: '1.6' }}>
+                  <li>Underwater mortgage if home drops 20%+</li>
+                  <li>Can't easily move for job opportunities</li>
+                  <li>Maintenance costs don't go away</li>
+                  {opt.marginLoan > 0 && <li>Margin call risk if market tanks</li>}
+                </ul>
+              </div>
+              <div>
+                <div style={{ color: '#60a5fa', fontWeight: '500', marginBottom: '6px' }}>If You Rent (Downside)</div>
+                <ul style={{ margin: 0, paddingLeft: '16px', color: '#c0c0d0', fontSize: '0.8rem', lineHeight: '1.6' }}>
+                  <li>Portfolio drops 20% = {fmt$(stockPortfolio * 0.2)} loss</li>
+                  <li>Rent increases ({rentGrowth}%/yr compounds)</li>
+                  <li>Landlord could sell/evict you</li>
+                  <li>No equity building</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ marginTop: '12px', fontSize: '0.8rem', color: '#8b8ba7', fontStyle: 'italic' }}>
+            Both paths have risks. Buying locks in housing costs but ties up capital. Renting maintains flexibility but exposes you to rent increases.
+          </div>
         </div>
 
         <div style={s.planCard}>
@@ -2739,7 +2232,7 @@ export default function HomePurchaseOptimizer() {
                     value={customAssumptions.pmiRate}
                     onChange={e => setCustomAssumptions(prev => ({ ...prev, pmiRate: parseFloat(e.target.value) || 0 }))}
                   />
-                  <div style={{ fontSize: '0.65rem', color: '#8b8ba7', marginTop: '2px' }}>Default: 0.5% (if LTV > 80%)</div>
+                  <div style={{ fontSize: '0.65rem', color: '#8b8ba7', marginTop: '2px' }}>Default: 0.5% (if LTV &gt; 80%)</div>
                 </div>
               </div>
 
@@ -2909,9 +2402,24 @@ export default function HomePurchaseOptimizer() {
             >
               Compare Other Scenarios →
             </button>
+            <button
+              onClick={() => setActiveTab('optimize')}
+              style={{
+                padding: '10px 20px',
+                borderRadius: '8px',
+                border: '1px solid rgba(255,255,255,0.15)',
+                background: 'rgba(255,255,255,0.05)',
+                color: '#8b8ba7',
+                cursor: 'pointer',
+                fontSize: '0.9rem',
+                fontWeight: '500',
+              }}
+            >
+              ← Back to Strategy
+            </button>
           </div>
         </div>
-        
+
         {/* Sensitivity Analysis Panel */}
         {showSensitivity && (
           <div style={{ background: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.3)', borderRadius: '16px', padding: '20px', marginBottom: '24px' }}>
@@ -3875,6 +3383,31 @@ export default function HomePurchaseOptimizer() {
       );
     }
 
+    // Interactive "What If?" slider
+    const whatIfRate = whatIfAppreciation !== null ? whatIfAppreciation : homeAppreciation;
+    const whatIfBreakEven = (() => {
+      if (whatIfAppreciation === null) return opt.breakEvenYear;
+      const scenario = calcScenario({
+        homePrice, cashDown: opt.cashDown, marginLoan: opt.marginLoan, helocAmount: opt.helocAmount,
+        mortgageRate: mortgageRate / 100, loanTerm, appreciationRate: whatIfAppreciation / 100,
+        investmentReturn: investmentReturn / 100, dividendYield: dividendYield / 100,
+        monthlyRent, rentGrowthRate: rentGrowth / 100, marginRate: marginRate / 100,
+        helocRate: helocRate / 100, fedRate, caRate, stateTax, stdDeduction, filingStatus, grossIncome
+      });
+      return scenario.breakEvenYear;
+    })();
+    const whatIfAdvantage = (() => {
+      if (whatIfAppreciation === null) return opt.yearlyAnalysis?.[9]?.advantage || 0;
+      const scenario = calcScenario({
+        homePrice, cashDown: opt.cashDown, marginLoan: opt.marginLoan, helocAmount: opt.helocAmount,
+        mortgageRate: mortgageRate / 100, loanTerm, appreciationRate: whatIfAppreciation / 100,
+        investmentReturn: investmentReturn / 100, dividendYield: dividendYield / 100,
+        monthlyRent, rentGrowthRate: rentGrowth / 100, marginRate: marginRate / 100,
+        helocRate: helocRate / 100, fedRate, caRate, stateTax, stdDeduction, filingStatus, grossIncome
+      });
+      return scenario.yearlyAnalysis?.[9]?.advantage || 0;
+    })();
+
     // Calculate sensitivity scenarios
     const baseBreakEven = opt.breakEvenYear === 'Never' ? 31 : opt.breakEvenYear;
     
@@ -4078,6 +3611,82 @@ export default function HomePurchaseOptimizer() {
           <p style={{ color: '#c0c0d0', margin: 0 }}>
             How changes in assumptions affect your break-even year
           </p>
+        </div>
+
+        {/* Interactive What If? Slider */}
+        <div style={{
+          background: 'rgba(255,255,255,0.03)',
+          borderRadius: '16px',
+          padding: '24px',
+          border: '1px solid rgba(255,255,255,0.08)',
+          marginBottom: '24px'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
+            <span style={{ fontSize: '1.3rem' }}>🎛️</span>
+            <div>
+              <div style={{ fontWeight: '600', color: '#fff', fontSize: '1rem' }}>What If? — Home Appreciation</div>
+              <div style={{ fontSize: '0.78rem', color: '#8b8ba7' }}>Drag the slider to see how appreciation affects your outcome</div>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '16px' }}>
+            <span style={{ fontSize: '0.75rem', color: '#8b8ba7', minWidth: '20px' }}>0%</span>
+            <input
+              type="range"
+              min={0}
+              max={10}
+              step={0.5}
+              value={whatIfRate}
+              onChange={(e) => setWhatIfAppreciation(parseFloat(e.target.value))}
+              style={{ flex: 1, accentColor: '#a78bfa' }}
+            />
+            <span style={{ fontSize: '0.75rem', color: '#8b8ba7', minWidth: '25px' }}>10%</span>
+            <div style={{
+              background: 'rgba(167,139,250,0.2)',
+              border: '1px solid rgba(167,139,250,0.4)',
+              borderRadius: '8px',
+              padding: '6px 14px',
+              minWidth: '60px',
+              textAlign: 'center'
+            }}>
+              <div style={{ fontSize: '1.2rem', fontWeight: '700', color: '#a78bfa' }}>{whatIfRate.toFixed(1)}%</div>
+              <div style={{ fontSize: '0.6rem', color: '#8b8ba7' }}>per year</div>
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '10px', padding: '14px', textAlign: 'center' }}>
+              <div style={{ fontSize: '0.65rem', color: '#8b8ba7', marginBottom: '4px' }}>Break-Even</div>
+              <div style={{ fontSize: '1.3rem', fontWeight: '700', color: whatIfBreakEven === 'Never' ? '#f87171' : whatIfBreakEven <= 7 ? '#4ade80' : '#fbbf24' }}>
+                {whatIfBreakEven === 'Never' ? 'Never' : `Year ${whatIfBreakEven}`}
+              </div>
+              {whatIfAppreciation !== null && opt.breakEvenYear !== whatIfBreakEven && (
+                <div style={{ fontSize: '0.7rem', color: '#8b8ba7', marginTop: '4px' }}>
+                  was: {opt.breakEvenYear === 'Never' ? 'Never' : `Year ${opt.breakEvenYear}`} at {homeAppreciation}%
+                </div>
+              )}
+            </div>
+            <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '10px', padding: '14px', textAlign: 'center' }}>
+              <div style={{ fontSize: '0.65rem', color: '#8b8ba7', marginBottom: '4px' }}>10-Year Advantage</div>
+              <div style={{ fontSize: '1.3rem', fontWeight: '700', color: whatIfAdvantage >= 0 ? '#4ade80' : '#f87171' }}>
+                {whatIfAdvantage >= 0 ? '+' : ''}{fmt$(whatIfAdvantage)}
+              </div>
+              {whatIfAppreciation !== null && (
+                <div style={{ fontSize: '0.7rem', color: '#8b8ba7', marginTop: '4px' }}>
+                  vs renting over 10 years
+                </div>
+              )}
+            </div>
+          </div>
+
+          {whatIfAppreciation !== null && (
+            <button
+              onClick={() => setWhatIfAppreciation(null)}
+              style={{ marginTop: '12px', background: 'none', border: 'none', color: '#8b8ba7', cursor: 'pointer', fontSize: '0.78rem', padding: 0 }}
+            >
+              Reset to default ({homeAppreciation}%)
+            </button>
+          )}
         </div>
 
         {/* Load-Bearing Assumptions Alert */}
@@ -4329,16 +3938,35 @@ export default function HomePurchaseOptimizer() {
 
     const selected = displayOptions.find(o => o.dpPct === affSelectedDpPct) || displayOptions[0];
     const comfortLevel = (pct) => {
-      if (pct <= 0.20) return { label: 'Excellent', color: '#4ade80', desc: 'Well below 30% rule — ample room for savings' };
-      if (pct <= 0.30) return { label: 'Comfortable', color: '#60a5fa', desc: 'Within guidelines — solid financial balance' };
-      if (pct <= 0.40) return { label: 'Stretched', color: '#fbbf24', desc: 'Manageable but limits other financial goals' };
-      if (pct <= 0.50) return { label: 'Heavy', color: '#f97316', desc: 'Housing-burdened — most budgets feel tight here' };
-      return { label: 'Unsustainable', color: '#f87171', desc: 'Majority of paycheck to housing — high financial stress' };
+      if (pct <= 0.20) return { label: 'Excellent', color: '#4ade80', desc: 'Under 20% of take-home — plenty left for retirement savings, investments, and lifestyle' };
+      if (pct <= 0.30) return { label: 'Comfortable', color: '#60a5fa', desc: 'The classic "30% rule" adjusted for after-tax income — sustainable long-term' };
+      if (pct <= 0.40) return { label: 'Stretched', color: '#fbbf24', desc: 'Workable for high earners, but you\'ll need discipline on other spending' };
+      if (pct <= 0.50) return { label: 'Heavy', color: '#f97316', desc: 'HUD considers this "housing-burdened" — expect trade-offs on savings and lifestyle' };
+      return { label: 'Unsustainable', color: '#f87171', desc: 'Over half your paycheck goes to housing — very high financial stress risk' };
     };
     const takeHomeColor = (pct) => comfortLevel(pct).color;
 
     return (
       <>
+        {/* Educational Intro */}
+        <div style={{ ...s.card, background: 'linear-gradient(135deg, rgba(96,165,250,0.08), rgba(59,130,246,0.04))', border: '1px solid rgba(96,165,250,0.2)', marginBottom: '24px' }}>
+          <h3 style={{ ...s.section, marginTop: 0, color: '#60a5fa' }}>How Home Affordability Works</h3>
+          <div style={{ fontSize: '0.88rem', color: '#c0c0d0', lineHeight: '1.8' }}>
+            <p style={{ marginBottom: '12px' }}>When you apply for a mortgage, lenders check two things:</p>
+            <div style={{ display: 'grid', gap: '10px', marginBottom: '12px' }}>
+              <div style={{ padding: '12px 16px', background: 'rgba(0,0,0,0.2)', borderRadius: '8px', display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                <span style={{ fontSize: '1.2rem' }}>1</span>
+                <div><strong style={{ color: '#fbbf24' }}>Debt-to-Income (DTI) Ratio</strong> — Your monthly housing costs (mortgage + taxes + insurance) can't exceed ~43% of your gross monthly income. This is the main limit on how much house your <em>income</em> supports.</div>
+              </div>
+              <div style={{ padding: '12px 16px', background: 'rgba(0,0,0,0.2)', borderRadius: '8px', display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                <span style={{ fontSize: '1.2rem' }}>2</span>
+                <div><strong style={{ color: '#a78bfa' }}>Down Payment + Closing Costs</strong> — You need enough cash for the down payment (3-50% of home price) plus ~3-4% in closing costs. This is the limit on how much house your <em>savings</em> supports.</div>
+              </div>
+            </div>
+            <p style={{ fontSize: '0.82rem', color: '#8b8ba7' }}>Below, we calculate the maximum home price limited by whichever constraint binds first — income or savings. The comfort level shows how that payment compares to your actual take-home pay (after taxes).</p>
+          </div>
+        </div>
+
         {/* Section A: The Answer */}
         {recommended && recommended.maxPrice > 0 && (
           <div style={{ ...s.planCard, textAlign: 'center', marginBottom: '24px' }}>
@@ -4414,8 +4042,11 @@ export default function HomePurchaseOptimizer() {
         {/* Comfort Target Selector */}
         <div style={s.card}>
           <h3 style={{ ...s.section, marginTop: 0 }}>How much of your paycheck for housing?</h3>
+          <p style={{ fontSize: '0.85rem', color: '#8b8ba7', marginBottom: '8px' }}>
+            Financial advisors use the "30% rule" — spend no more than 30% of gross income on housing. But for high earners in California paying ~45% effective tax, 30% of gross is actually ~55% of take-home.
+          </p>
           <p style={{ fontSize: '0.85rem', color: '#8b8ba7', marginBottom: '16px' }}>
-            Pick a comfort level to see what you can afford at that spending target, or select Max to see your absolute ceiling.
+            These targets use your <strong style={{ color: '#fff' }}>after-tax take-home</strong> instead — a more honest picture. Pick a comfort level, or select Max to see the absolute ceiling lenders would approve.
           </p>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '10px' }}>
             {[
@@ -4647,7 +4278,7 @@ export default function HomePurchaseOptimizer() {
           <div style={{ fontSize: '0.82rem', color: '#8b8ba7', lineHeight: '1.7' }}>
             <p style={{ marginBottom: '10px' }}>For each down payment level, we find the maximum home price limited by whichever binds first:</p>
             <div style={{ padding: '10px 16px', background: 'rgba(0,0,0,0.15)', borderRadius: '8px', marginBottom: '10px' }}>
-              <strong style={{ color: '#fbbf24' }}>Income:</strong> Monthly housing cost (PITI + HOA) cannot exceed 43% of gross income — the max most lenders approve.
+              <strong style={{ color: '#fbbf24' }}>Income:</strong> Monthly housing cost (PITI: principal, interest, taxes, insurance + HOA) cannot exceed 43% of gross income — the max most lenders approve.
             </div>
             <div style={{ padding: '10px 16px', background: 'rgba(0,0,0,0.15)', borderRadius: '8px', marginBottom: '10px' }}>
               <strong style={{ color: '#a78bfa' }}>Savings:</strong> Down payment + closing costs cannot exceed your savings minus {fmt$(minBuffer)} buffer.
@@ -4655,7 +4286,7 @@ export default function HomePurchaseOptimizer() {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 24px', marginTop: '12px' }}>
               <div>Property Tax: {fmtPct(SF.propTaxRate)} (SF avg)</div>
               <div>Insurance: 0.35% of home price</div>
-              <div>PMI: 0.50%/yr of loan (if {'<'}20% down)</div>
+              <div>PMI (private mortgage insurance): 0.50%/yr of loan (if {'<'}20% down)</div>
               <div>Loan: {loanTerm}yr at {mortgageRate}%</div>
               <div>Take-home est: ~{fmtPctWhole((1 - estEffectiveTaxRate) * 100)} of gross</div>
               <div>Closing: ~{fmtPct(SF.closeBuy)} + transfer tax</div>
@@ -4665,14 +4296,77 @@ export default function HomePurchaseOptimizer() {
             </p>
           </div>
         </div>
+
+        {/* Share affordability results */}
+        <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', marginBottom: '24px' }}>
+          <button
+            onClick={copyAffordabilitySummary}
+            style={{
+              padding: '10px 20px', borderRadius: '8px', border: 'none', cursor: 'pointer',
+              fontSize: '0.85rem', fontWeight: '500', transition: 'all 0.2s',
+              background: affordCopied ? 'rgba(74,222,128,0.15)' : 'rgba(255,255,255,0.08)',
+              color: affordCopied ? '#4ade80' : '#8b8ba7',
+              border: affordCopied ? '1px solid rgba(74,222,128,0.3)' : '1px solid rgba(255,255,255,0.1)',
+            }}
+          >
+            {affordCopied ? '✓ Copied!' : '📋 Copy Affordability Summary'}
+          </button>
+          <button
+            onClick={copyShareLink}
+            style={{
+              padding: '10px 20px', borderRadius: '8px', border: 'none', cursor: 'pointer',
+              fontSize: '0.85rem', fontWeight: '500', transition: 'all 0.2s',
+              background: linkCopied ? 'rgba(74,222,128,0.15)' : 'rgba(255,255,255,0.08)',
+              color: linkCopied ? '#4ade80' : '#8b8ba7',
+              border: linkCopied ? '1px solid rgba(74,222,128,0.3)' : '1px solid rgba(255,255,255,0.1)',
+            }}
+          >
+            {linkCopied ? '✓ Copied!' : '🔗 Share Link'}
+          </button>
+        </div>
+
+        {/* Bridge CTA: Affordability → Best Strategy */}
+        {recommended && recommended.maxPrice > 0 && (
+          <div style={{ ...s.card, background: 'linear-gradient(135deg, rgba(34,197,94,0.12), rgba(16,185,129,0.08))', border: '2px solid rgba(34,197,94,0.3)', textAlign: 'center' }}>
+            <div style={{ fontSize: '0.75rem', color: '#8b8ba7', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>Next Step</div>
+            <div style={{ fontSize: '1.1rem', color: '#fff', marginBottom: '12px', lineHeight: '1.6' }}>
+              Now that you know your range, find the <strong style={{ color: '#4ade80' }}>best down payment and financing strategy</strong> for your situation.
+            </div>
+            <button onClick={() => { if (recommended) setHomePrice(recommended.maxPrice); handleOptimize(); setActiveTab('optimize'); }} style={{
+              padding: '14px 32px', borderRadius: '10px', border: 'none', cursor: 'pointer', fontSize: '1rem', fontWeight: '600',
+              background: 'linear-gradient(135deg, #22c55e, #16a34a)', color: '#fff',
+            }}>Find Best Strategy for {fmt$(recommended.maxPrice)}</button>
+            <div style={{ fontSize: '0.75rem', color: '#8b8ba7', marginTop: '8px' }}>Tests hundreds of combinations to find your optimal approach</div>
+          </div>
+        )}
       </>
     );
   };
 
   return (
-    <div style={s.container}>
+    <div style={s.container} className="hpo-container">
+      <style>{`
+        @media (max-width: 900px) {
+          .hpo-grid { grid-template-columns: 1fr !important; }
+          .hpo-grid aside { max-height: none !important; }
+          .hpo-verdict-metrics { grid-template-columns: repeat(2, 1fr) !important; }
+          .hpo-cash-flow-grid { grid-template-columns: 1fr !important; }
+          .hpo-risk-grid { grid-template-columns: 1fr !important; }
+          .hpo-tabs { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+          .hpo-comfort-row { flex-wrap: wrap !important; }
+          .hpo-affordability-indicator { flex-direction: column !important; text-align: center !important; }
+          .hpo-affordability-indicator > div:nth-child(2) { border-left: none !important; padding-left: 0 !important; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 16px; }
+        }
+        @media (max-width: 600px) {
+          .hpo-container { padding: 12px !important; }
+          .hpo-title { font-size: 1.8rem !important; }
+          .hpo-verdict-metrics { grid-template-columns: 1fr 1fr !important; }
+          .hpo-tabs button { padding: 10px 14px !important; font-size: 0.78rem !important; }
+          .hpo-margin-grid { grid-template-columns: 1fr !important; }
+        }
+      `}</style>
       <header style={s.header}>
-        <h1 style={s.title}>Home Purchase Optimizer</h1>
+        <h1 style={s.title} className="hpo-title">Home Purchase Optimizer</h1>
         <p style={{ color: '#8b8ba7', fontSize: '1rem' }}>AI-powered strategy optimization for SF homebuyers</p>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', marginTop: '12px', flexWrap: 'wrap' }}>
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'rgba(249,115,22,0.15)', border: '1px solid rgba(249,115,22,0.3)', borderRadius: '20px', padding: '6px 14px', fontSize: '0.8rem', color: '#fb923c' }}>🌉 San Francisco Edition</div>
@@ -4701,7 +4395,7 @@ export default function HomePurchaseOptimizer() {
             border: '1px solid rgba(255,255,255,0.1)'
           }}>
             <button
-              onClick={() => { setIsExpertMode(false); setActiveTab('optimize'); }}
+              onClick={() => { setIsExpertMode(false); setActiveTab('afford'); }}
               style={{
                 padding: '6px 14px',
                 borderRadius: '18px',
@@ -4736,16 +4430,17 @@ export default function HomePurchaseOptimizer() {
         </div>
       </header>
       
-      <div style={s.grid}>
+      <div style={s.grid} className="hpo-grid">
         <aside style={s.panel}>
           <h3 style={{ ...s.section, marginTop: 0 }}>Your Situation</h3>
           <div style={s.inputGroup}>
             <label style={s.label}>Target Home Price</label>
-            <CurrencyInput 
-              style={s.input} 
-              value={homePrice} 
-              onChange={setHomePrice} 
-              min={100000} 
+            <div style={{ fontSize: '0.7rem', color: '#8b8ba7', marginTop: '-2px', marginBottom: '4px' }}>Use "What Can I Buy?" tab if unsure</div>
+            <CurrencyInput
+              style={s.input}
+              value={homePrice}
+              onChange={setHomePrice}
+              min={100000}
               max={50000000}
               error={validationErrors.homePrice}
               onValidate={(valid, err) => setFieldError('homePrice', err)}
@@ -4753,35 +4448,25 @@ export default function HomePurchaseOptimizer() {
           </div>
           <div style={s.inputGroup}>
             <label style={s.label}>Total Cash Savings</label>
-            <CurrencyInput 
-              style={s.input} 
-              value={totalSavings} 
-              onChange={setTotalSavings} 
-              min={0} 
+            <div style={{ fontSize: '0.7rem', color: '#8b8ba7', marginTop: '-2px', marginBottom: '4px' }}>Cash available for down payment + closing costs</div>
+            <CurrencyInput
+              style={s.input}
+              value={totalSavings}
+              onChange={setTotalSavings}
+              min={0}
               max={50000000}
               error={validationErrors.totalSavings}
               onValidate={(valid, err) => setFieldError('totalSavings', err)}
             />
           </div>
           <div style={s.inputGroup}>
-            <label style={s.label}>Stock Portfolio</label>
-            <CurrencyInput 
-              style={s.input} 
-              value={stockPortfolio} 
-              onChange={setStockPortfolio} 
-              min={0} 
-              max={50000000}
-              error={validationErrors.stockPortfolio}
-              onValidate={(valid, err) => setFieldError('stockPortfolio', err)}
-            />
-          </div>
-          <div style={s.inputGroup}>
             <label style={s.label}>Gross Income</label>
-            <CurrencyInput 
-              style={s.input} 
-              value={grossIncome} 
-              onChange={setGrossIncome} 
-              min={1} 
+            <div style={{ fontSize: '0.7rem', color: '#8b8ba7', marginTop: '-2px', marginBottom: '4px' }}>Before taxes — used for DTI ratio and take-home</div>
+            <CurrencyInput
+              style={s.input}
+              value={grossIncome}
+              onChange={setGrossIncome}
+              min={1}
               max={50000000}
               error={validationErrors.grossIncome}
               onValidate={(valid, err) => setFieldError('grossIncome', err)}
@@ -4789,55 +4474,86 @@ export default function HomePurchaseOptimizer() {
           </div>
           <div style={s.inputGroup}>
             <label style={s.label}>Monthly Rent</label>
-            <CurrencyInput 
-              style={s.input} 
-              value={monthlyRent} 
-              onChange={setMonthlyRent} 
-              min={0} 
+            <div style={{ fontSize: '0.7rem', color: '#8b8ba7', marginTop: '-2px', marginBottom: '4px' }}>Current rent — used to compare owning vs renting</div>
+            <CurrencyInput
+              style={s.input}
+              value={monthlyRent}
+              onChange={setMonthlyRent}
+              min={0}
               max={100000}
               error={validationErrors.monthlyRent}
               onValidate={(valid, err) => setFieldError('monthlyRent', err)}
             />
           </div>
           <div style={s.inputGroup}>
+            <label style={s.label}>Filing Status</label>
+            <div style={{ fontSize: '0.7rem', color: '#8b8ba7', marginTop: '-2px', marginBottom: '4px' }}>Affects tax brackets and take-home pay</div>
+            <select style={s.select} value={filingStatus} onChange={e => setFilingStatus(e.target.value)}>
+              <option value="married">Married Filing Jointly</option>
+              <option value="single">Single / Head of Household</option>
+            </select>
+          </div>
+          <div style={s.inputGroup}>
+            <label style={s.label}>Mortgage Rate (%)</label>
+            <div style={{ fontSize: '0.7rem', color: '#8b8ba7', marginTop: '-2px', marginBottom: '4px' }}>Current 30-year fixed — check with lenders for quotes</div>
+            <NumberInput
+              style={s.input}
+              value={mortgageRate}
+              onChange={setMortgageRate}
+              min={0.1}
+              max={20}
+              step={0.125}
+              error={validationErrors.mortgageRate}
+              onValidate={(valid, err) => setFieldError('mortgageRate', err)}
+            />
+          </div>
+
+          {/* Advanced Settings Toggle */}
+          <button
+            onClick={() => setShowAdvancedInputs(!showAdvancedInputs)}
+            style={{
+              width: '100%', padding: '10px', marginTop: '8px', marginBottom: '4px',
+              background: showAdvancedInputs ? 'rgba(167,139,250,0.1)' : 'rgba(255,255,255,0.03)',
+              border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px',
+              color: '#a78bfa', fontSize: '0.8rem', fontWeight: '500', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            }}>
+            <span>{showAdvancedInputs ? '▼' : '▶'} Advanced Settings</span>
+            <span style={{ fontSize: '0.7rem', color: '#8b8ba7' }}>Buffer, rates, returns</span>
+          </button>
+
+          {showAdvancedInputs && (<>
+          <div style={s.inputGroup}>
             <label style={s.label}>Min. Buffer</label>
-            <CurrencyInput 
-              style={s.input} 
-              value={minBuffer} 
-              onChange={setMinBuffer} 
-              min={0} 
+            <CurrencyInput
+              style={s.input}
+              value={minBuffer}
+              onChange={setMinBuffer}
+              min={0}
               max={10000000}
               error={validationErrors.minBuffer}
               onValidate={(valid, err) => setFieldError('minBuffer', err)}
             />
           </div>
           <div style={s.inputGroup}>
-            <label style={s.label}>Filing Status</label>
-            <select style={s.select} value={filingStatus} onChange={e => setFilingStatus(e.target.value)}>
-              <option value="married">Married Filing Jointly</option>
-              <option value="single">Single / Head of Household</option>
-            </select>
+            <label style={s.label}>Stock Portfolio</label>
+            <CurrencyInput
+              style={s.input}
+              value={stockPortfolio}
+              onChange={setStockPortfolio}
+              min={0}
+              max={50000000}
+              error={validationErrors.stockPortfolio}
+              onValidate={(valid, err) => setFieldError('stockPortfolio', err)}
+            />
           </div>
 
           <div style={s.auto}>
             <div style={{ fontSize: '0.7rem', color: '#fb923c', textTransform: 'uppercase' }}>Combined Rate</div>
             <div style={{ fontSize: '1rem', color: '#fff', fontWeight: '600' }}>{fmtPct(combRate)}</div>
           </div>
-          
-          <h3 style={s.section}>Rates</h3>
-          <div style={s.inputGroup}>
-            <label style={s.label}>Mortgage (%)</label>
-            <NumberInput 
-              style={s.input} 
-              value={mortgageRate} 
-              onChange={setMortgageRate} 
-              min={0.1} 
-              max={20} 
-              step={0.125}
-              error={validationErrors.mortgageRate}
-              onValidate={(valid, err) => setFieldError('mortgageRate', err)}
-            />
-          </div>
+
+          <h3 style={s.section}>Rates & Returns</h3>
           <div style={s.inputGroup}>
             <label style={s.label}>Margin (%)</label>
             <NumberInput 
@@ -4930,13 +4646,14 @@ export default function HomePurchaseOptimizer() {
               onValidate={(valid, err) => setFieldError('rentGrowth', err)}
             />
           </div>
+          </>)}
 
-          <button 
+          <button
             style={{
               ...s.btn,
               opacity: isFormValid ? 1 : 0.5,
               cursor: isFormValid ? 'pointer' : 'not-allowed'
-            }} 
+            }}
             onClick={handleOptimize}
             disabled={!isFormValid}
           >
@@ -4978,7 +4695,7 @@ export default function HomePurchaseOptimizer() {
                 <span style={{ fontSize: '1.5rem' }}>🎯</span>
                 <div>
                   <div style={{ color: '#22c55e', fontWeight: '600', fontSize: '0.95rem' }}>Quick Mode</div>
-                  <div style={{ color: '#a0a0b0', fontSize: '0.8rem' }}>Simplified view — just the verdict. Switch to Expert for full analysis.</div>
+                  <div style={{ color: '#a0a0b0', fontSize: '0.8rem' }}>Start with what you can afford, then get your best strategy. Switch to Expert for deep analysis.</div>
                 </div>
               </div>
               <button
@@ -5000,7 +4717,8 @@ export default function HomePurchaseOptimizer() {
             </div>
           )}
 
-          <div style={s.tabs}>
+          <div style={s.tabs} className="hpo-tabs">
+            <button style={{ ...s.tab, ...(activeTab === 'afford' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('afford')}>What Can I Buy?</button>
             <button style={{ ...s.tab, ...(activeTab === 'optimize' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('optimize')}>Best Strategy</button>
             {isExpertMode && (
               <>
@@ -5011,7 +4729,6 @@ export default function HomePurchaseOptimizer() {
                 <button style={{ ...s.tab, ...(activeTab === 'manual' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('manual')}>Build Your Own</button>
               </>
             )}
-            <button style={{ ...s.tab, ...(activeTab === 'afford' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('afford')}>What Can I Buy?</button>
           </div>
 
           {activeTab === 'optimize' && renderOptimize()}
