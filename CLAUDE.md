@@ -57,7 +57,7 @@ app/
 - **Editable assumptions**: 9 SF-specific constants (prop tax, transfer tax, PMI rate, etc.) with reset
 - **Opportunity cost metric**: 5th verdict metric showing down payment opportunity cost
 - **Shareable reports**: Copy Summary + Share Link buttons on Best Strategy and What Can I Buy? tabs
-- **Responsive design**: CSS media queries at 900px and 600px breakpoints for tablet/mobile
+- **Responsive design**: Full mobile-friendly CSS with 3 breakpoints (900px/600px/400px), 36 CSS class targets, viewport meta tag, mobile numeric keyboards, horizontal-scrolling tabs, and responsive grids/charts/typography
 - **Visual polish**: Tab bar styling, active tab glow, card hover transitions
 
 ## Tabs (7 total)
@@ -128,7 +128,7 @@ app/
 - **Comfort tiers**: Defined inline in `renderAffordability`, `renderOptimize`, and copy callbacks — could extract to shared helper.
 - **`taxBreakdown` useMemo**: Has duplicate bracket data for display only. Actual computation uses `calcFedTax`/`calcCAStateTax`.
 - **URL params**: Hydrated on mount, debounced sync on state changes.
-- **Responsive CSS**: `<style>` tag with media queries + className overrides on inline styles. Classes: `hpo-container`, `hpo-grid`, `hpo-title`, `hpo-verdict-metrics`, `hpo-tabs`, `hpo-affordability-indicator`, `hpo-cash-flow-grid`, `hpo-risk-grid`.
+- **Responsive CSS**: `<style>` tag with 3 breakpoints (900px tablet, 600px mobile, 400px extra-small) + 36 CSS class targets for `!important` overrides on inline styles. Key classes: `hpo-container`, `hpo-grid`, `hpo-card`, `hpo-plan-card`, `hpo-panel`, `hpo-metrics`, `hpo-tabs`, `hpo-two-col`, `hpo-three-col`, `hpo-preset-grid`, `hpo-comfort-chips`, `hpo-spectrum-cards`, `hpo-deep-dive-metrics`, `hpo-monthly-breakdown`, `hpo-tornado-row`, `hpo-matrix-wrapper`, `hpo-share-btns`, `hpo-cta-btn`, `hpo-verdict-emoji`, `hpo-verdict-text`, `hpo-hero-price`, `hpo-section-title`, `hpo-tax-rates`, `hpo-tax-rate-val`, `hpo-chart`, `hpo-scenario-cards`, `hpo-assumptions-grid`, `hpo-cost-table`, and more.
 - **Hook ordering**: Copy callbacks (`copyResultsSummary`, `copyAffordabilitySummary`) must be declared AFTER `estimatedTakeHome` and `affordability` to avoid TDZ errors.
 
 ## ROADMAP Status

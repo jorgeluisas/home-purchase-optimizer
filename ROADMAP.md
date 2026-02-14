@@ -25,7 +25,7 @@ Every tab has a clear next action. Cross-tab navigation links between Best Strat
 
 ### High Priority
 - **Unit tests for calculations.js** — Pure functions, no React dependencies, easy to test. Would catch regressions in tax math, affordability formula, and optimization logic.
-- **Full mobile responsive polish** — Current breakpoints (900px/600px) handle basic layout. Needs: touch-friendly inputs, better chart sizing on small screens, swipeable tabs.
+- ~~**Full mobile responsive polish**~~ — **DONE.** 3 breakpoints (900px/600px/400px), viewport meta tag, 36 CSS class targets, responsive grids/charts/typography, horizontal-scroll tabs, mobile numeric keyboards, full-width CTAs, stacked share buttons. Remaining nice-to-have: swipeable tabs (JS).
 - **Performance optimization** — Lazy-load Expert-only tabs (Side-by-Side, Own vs Rent, Sensitivity, Taxes, Build Your Own). Audit memoization for unnecessary re-renders.
 
 ### Medium Priority
