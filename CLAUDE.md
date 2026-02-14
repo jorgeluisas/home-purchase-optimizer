@@ -10,9 +10,9 @@ A React app for San Francisco home buyers. Compares down payment strategies, mod
 
 ```
 app/
-├── HomePurchaseOptimizer.jsx   # Main component — all UI rendering (~4,745 lines)
+├── HomePurchaseOptimizer.jsx   # Main component — all UI rendering (~4,850 lines)
 ├── calculations.js             # All financial math & utilities (~626 lines)
-├── layout.js                   # App layout
+├── layout.js                   # App layout (viewport meta + metadata)
 └── page.js                     # Entry point (Suspense wrapper)
 ```
 
@@ -144,7 +144,7 @@ app/
 ## Build & Run
 
 ```bash
-cd ~/Desktop/home-purchase-optimizer
+cd ~/Documents/Claude-work/home-purchase-optimizer
 npm run dev    # dev server
 npm run build  # production build
 ```

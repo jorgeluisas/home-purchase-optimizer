@@ -2,7 +2,7 @@
 
 ## Completed
 
-All 5 original UX fixes are done. Additionally, 14 iterations of improvements were applied covering educational value, shareability, usability, visual design, code quality, expert mode depth, and mobile responsiveness.
+All 5 original UX fixes are done. Additionally, 14 iterations of improvements were applied covering educational value, shareability, usability, visual design, code quality, expert mode depth, and mobile responsiveness. Full mobile responsive overhaul completed as a subsequent enhancement.
 
 ### ✅ Fix 1: Progressive Disclosure
 Verdict card + 5 key metrics visible by default. Detailed sections (interest deductibility, non-recoverable costs, top strategies, downside risk) collapsed behind "Show Full Analysis" toggle.
@@ -19,13 +19,16 @@ Input grouping: "Your Finances" (always visible) / "Rates & Assumptions" (collap
 ### ✅ Fix 5: Clear CTA Per Tab
 Every tab has a clear next action. Cross-tab navigation links between Best Strategy, Own vs Rent, Sensitivity, and Tax tabs. Quick-to-Expert mode prompt. "Copy Summary" and "Share Link" on key tabs.
 
+### ✅ Full Mobile Responsive Overhaul
+3 CSS breakpoints (900px tablet, 600px mobile, 400px extra-small) with 36 CSS class targets. Viewport meta tag in `layout.js`. Mobile numeric keyboards via `inputMode="decimal"`. Horizontal-scroll tab bar. All grids collapse to appropriate column counts. Chart heights scale down. Typography reduces. CTAs go full-width, share buttons stack. Tornado chart labels stack above bars. Break-even matrix scrolls horizontally. Desktop appearance fully preserved — all overrides via CSS `!important`.
+
 ---
 
 ## Future Enhancements
 
 ### High Priority
 - **Unit tests for calculations.js** — Pure functions, no React dependencies, easy to test. Would catch regressions in tax math, affordability formula, and optimization logic.
-- ~~**Full mobile responsive polish**~~ — **DONE.** 3 breakpoints (900px/600px/400px), viewport meta tag, 36 CSS class targets, responsive grids/charts/typography, horizontal-scroll tabs, mobile numeric keyboards, full-width CTAs, stacked share buttons. Remaining nice-to-have: swipeable tabs (JS).
+- **Swipeable tabs (nice-to-have)** — Touch gesture to swipe between tabs on mobile. Would require a JS library or custom touch handler.
 - **Performance optimization** — Lazy-load Expert-only tabs (Side-by-Side, Own vs Rent, Sensitivity, Taxes, Build Your Own). Audit memoization for unnecessary re-renders.
 
 ### Medium Priority
