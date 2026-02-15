@@ -4350,16 +4350,24 @@ export default function HomePurchaseOptimizer() {
     <div style={s.container} className="hpo-container">
       <style>{`
         /* ========== GLOBAL RESETS ========== */
-        html { overflow-x: hidden; }
-        input, select, textarea {
-          -webkit-appearance: none;
-          -moz-appearance: none;
-          appearance: none;
+        html { overflow-x: hidden; color-scheme: dark; }
+        .hpo-container input:not([type="range"]),
+        .hpo-container select,
+        .hpo-container textarea {
+          -webkit-appearance: none !important;
+          -moz-appearance: none !important;
+          appearance: none !important;
+          background-color: rgba(0,0,0,0.3) !important;
+          color: #fff !important;
+          opacity: 1 !important;
+          border-radius: 8px !important;
+          font-size: 16px !important;
         }
-        input[type="range"] {
-          -webkit-appearance: auto;
-          -moz-appearance: auto;
-          appearance: auto;
+        .hpo-container select {
+          background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%238b8ba7' d='M6 8L1 3h10z'/%3E%3C/svg%3E") !important;
+          background-repeat: no-repeat !important;
+          background-position: right 12px center !important;
+          padding-right: 32px !important;
         }
 
         /* ========== TABLET (900px) ========== */
