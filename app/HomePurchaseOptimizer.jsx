@@ -647,7 +647,7 @@ export default function HomePurchaseOptimizer() {
   }), [grossIncome, totalSavings, mortgageRate, loanTerm, minBuffer, affMonthlyHOA, affMonthlyOtherDebt, monthlyRent, estEffectiveTaxRate, affTargetComfort]);
 
   const s = {
-    container: { fontFamily: "'IBM Plex Sans', -apple-system, sans-serif", background: 'linear-gradient(135deg, #0c1220 0%, #1a1a2e 50%, #16213e 100%)', minHeight: '100vh', color: '#e0e0e0', padding: '24px' },
+    container: { fontFamily: "'IBM Plex Sans', -apple-system, sans-serif", background: 'linear-gradient(135deg, #0c1220 0%, #1a1a2e 50%, #16213e 100%)', minHeight: '100vh', color: '#e0e0e0', padding: '24px', overflowX: 'hidden', boxSizing: 'border-box' },
     header: { textAlign: 'center', marginBottom: '32px' },
     title: { fontSize: '2.5rem', fontWeight: '300', background: 'linear-gradient(90deg, #f97316, #eab308)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', marginBottom: '8px' },
     grid: { display: 'grid', gridTemplateColumns: '360px 1fr', gap: '24px', maxWidth: '1800px', margin: '0 auto' },
@@ -655,8 +655,8 @@ export default function HomePurchaseOptimizer() {
     section: { fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '1.5px', color: '#f97316', marginBottom: '16px', fontWeight: '600', marginTop: '24px' },
     inputGroup: { marginBottom: '16px' },
     label: { display: 'block', fontSize: '0.85rem', color: '#b0b0c0', marginBottom: '6px' },
-    input: { width: '100%', padding: '12px', fontSize: '1rem', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', background: 'rgba(0,0,0,0.3)', color: '#fff', outline: 'none', boxSizing: 'border-box' },
-    select: { width: '100%', padding: '12px', fontSize: '1rem', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', background: 'rgba(0,0,0,0.3)', color: '#fff', cursor: 'pointer' },
+    input: { width: '100%', padding: '12px', fontSize: '1rem', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', background: 'rgba(0,0,0,0.3)', color: '#fff', outline: 'none', boxSizing: 'border-box', WebkitAppearance: 'none', appearance: 'none' },
+    select: { width: '100%', padding: '12px', fontSize: '1rem', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', background: 'rgba(0,0,0,0.3)', color: '#fff', cursor: 'pointer', WebkitAppearance: 'none', appearance: 'none' },
     slider: { width: '100%', marginTop: '8px', accentColor: '#f97316' },
     btn: { width: '100%', padding: '16px', fontSize: '1.1rem', fontWeight: '600', border: 'none', borderRadius: '12px', cursor: 'pointer', marginTop: '20px', background: 'linear-gradient(135deg, #f97316, #eab308)', color: '#fff' },
     auto: { background: 'rgba(249,115,22,0.08)', border: '1px solid rgba(249,115,22,0.2)', borderRadius: '8px', padding: '10px 12px', marginBottom: '12px' },
@@ -2805,7 +2805,7 @@ export default function HomePurchaseOptimizer() {
                   type="text"
                   value={sc.name}
                   onChange={e => updateScenario(sc.id, 'name', e.target.value)}
-                  style={{ background: 'transparent', border: 'none', color: colors[idx % colors.length], fontSize: '1.1rem', fontWeight: '600', maxWidth: '120px', width: '100%' }}
+                  style={{ background: 'transparent', border: 'none', color: colors[idx % colors.length], fontSize: '1.1rem', fontWeight: '600', maxWidth: '120px', width: '100%', WebkitAppearance: 'none' }}
                 />
                 {scenarios.length > 1 && (
                   <button onClick={() => removeScenario(sc.id)} style={{ background: 'rgba(248,113,113,0.2)', border: 'none', color: '#f87171', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem' }}>✕</button>
@@ -4349,6 +4349,19 @@ export default function HomePurchaseOptimizer() {
   return (
     <div style={s.container} className="hpo-container">
       <style>{`
+        /* ========== GLOBAL RESETS ========== */
+        html { overflow-x: hidden; }
+        input, select, textarea {
+          -webkit-appearance: none;
+          -moz-appearance: none;
+          appearance: none;
+        }
+        input[type="range"] {
+          -webkit-appearance: auto;
+          -moz-appearance: auto;
+          appearance: auto;
+        }
+
         /* ========== TABLET (900px) ========== */
         @media (max-width: 900px) {
           /* Layout */
