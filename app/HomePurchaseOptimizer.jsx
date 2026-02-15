@@ -4350,7 +4350,7 @@ export default function HomePurchaseOptimizer() {
     <div style={s.container} className="hpo-container">
       <style>{`
         /* ========== GLOBAL RESETS ========== */
-        html { overflow-x: hidden; color-scheme: dark; }
+        html, body { overflow-x: hidden; color-scheme: dark; background: #0c1220; }
         .hpo-container input:not([type="range"]),
         .hpo-container select,
         .hpo-container textarea {

@@ -11,8 +11,8 @@ export const viewport = {
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en" style={{ colorScheme: 'dark' }}>
-      <body style={{ margin: 0, padding: 0, overflowX: 'hidden' }}>{children}</body>
+    <html lang="en" style={{ colorScheme: 'dark', background: '#0c1220' }}>
+      <body style={{ margin: 0, padding: 0, overflowX: 'hidden', background: '#0c1220' }}>{children}</body>
     </html>
   )
 }
