@@ -14,7 +14,7 @@ A financial planning tool for San Francisco home purchases. Analyzes multiple fi
 - **SF-Specific Defaults** — Prop 13, transfer taxes, parcel tax, and local rates baked in
 - **Shareable Results** — Copy formatted summaries or share links with URL-encoded scenarios
 - **Quick & Expert Modes** — Quick mode for casual users (2 tabs), Expert mode for power users (7 tabs)
-- **Fully Mobile Responsive** — 3 CSS breakpoints (900px/600px/400px), viewport meta tag, mobile numeric keyboards, horizontal-scroll tabs, responsive grids and charts
+- **Fully Mobile Responsive** — 3 CSS breakpoints (900px/600px/400px), viewport meta tag, mobile numeric keyboards, horizontal-scroll tabs, responsive grids and charts, iOS Safari dark input styling
 
 ## Tech Stack
 
@@ -27,9 +27,9 @@ A financial planning tool for San Francisco home purchases. Analyzes multiple fi
 
 ```
 app/
-├── HomePurchaseOptimizer.jsx   # Main component — all UI rendering (~4,850 lines)
+├── HomePurchaseOptimizer.jsx   # Main component — all UI rendering (~4,870 lines)
 ├── calculations.js             # Financial math & utilities (~626 lines)
-├── layout.js                   # App layout (viewport meta + metadata)
+├── layout.js                   # App layout (viewport meta, dark background, metadata)
 └── page.js                     # Entry point
 CLAUDE.md                       # AI session context
 ROADMAP.md                      # Roadmap & future enhancements
@@ -103,7 +103,7 @@ Open [http://localhost:3000](http://localhost:3000) to view the optimizer.
 - Tax calculations assume 2024 brackets (TCJA sunset considerations not included)
 - Investment interest deduction limited to actual dividend/interest income, not unrealized gains
 - NIIT (3.8%) applied to renter's investment returns for high earners
-- Fully mobile responsive with 3 breakpoints (900px tablet, 600px mobile, 400px extra-small), 36 CSS class targets, viewport meta tag, and mobile numeric keyboards
+- Fully mobile responsive with 3 breakpoints (900px tablet, 600px mobile, 400px extra-small), 36 CSS class targets, viewport meta tag, mobile numeric keyboards, and iOS Safari-specific dark input styling with `color-scheme: dark`
 
 ## License
 

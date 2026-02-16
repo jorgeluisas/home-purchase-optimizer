@@ -22,6 +22,9 @@ Every tab has a clear next action. Cross-tab navigation links between Best Strat
 ### ✅ Full Mobile Responsive Overhaul
 3 CSS breakpoints (900px tablet, 600px mobile, 400px extra-small) with 36 CSS class targets. Viewport meta tag in `layout.js`. Mobile numeric keyboards via `inputMode="decimal"`. Horizontal-scroll tab bar. All grids collapse to appropriate column counts. Chart heights scale down. Typography reduces. CTAs go full-width, share buttons stack. Tornado chart labels stack above bars. Break-even matrix scrolls horizontally. Desktop appearance fully preserved — all overrides via CSS `!important`.
 
+### ✅ iOS Safari Fixes
+Force dark input styling with `-webkit-appearance: none !important` and explicit `background-color`/`color`/`opacity` overrides scoped to `.hpo-container`. `color-scheme: dark` on `<html>`. Dark background (`#0c1220`) on both `<html>` and `<body>` to prevent white bleed-through during elastic scrolling. `font-size: 16px` on inputs to prevent iOS auto-zoom. Custom SVG dropdown arrow for `<select>` elements.
+
 ---
 
 ## Future Enhancements
