@@ -4,15 +4,15 @@
 A React app for San Francisco home buyers. Compares down payment strategies, models wealth impact, shows tax implications, includes affordability calculator with comfort targeting, sensitivity analysis, and risk visualization. Built with Next.js + Recharts, inline styles + responsive CSS.
 
 ## Current Branch
-`feature/enhancements-sensitivity-presets`
+`main`
 
 ## Project Structure
 
 ```
 app/
-├── HomePurchaseOptimizer.jsx   # Main component — all UI rendering (~4,850 lines)
+├── HomePurchaseOptimizer.jsx   # Main component — all UI rendering (~4,870 lines)
 ├── calculations.js             # All financial math & utilities (~626 lines)
-├── layout.js                   # App layout (viewport meta + metadata)
+├── layout.js                   # App layout (viewport meta, dark background, metadata)
 └── page.js                     # Entry point (Suspense wrapper)
 ```
 
@@ -57,7 +57,7 @@ app/
 - **Editable assumptions**: 9 SF-specific constants (prop tax, transfer tax, PMI rate, etc.) with reset
 - **Opportunity cost metric**: 5th verdict metric showing down payment opportunity cost
 - **Shareable reports**: Copy Summary + Share Link buttons on Best Strategy and What Can I Buy? tabs
-- **Responsive design**: Full mobile-friendly CSS with 3 breakpoints (900px/600px/400px), 36 CSS class targets, viewport meta tag, mobile numeric keyboards, horizontal-scrolling tabs, and responsive grids/charts/typography
+- **Responsive design**: Full mobile-friendly CSS with 3 breakpoints (900px/600px/400px), 36 CSS class targets, viewport meta tag, mobile numeric keyboards, horizontal-scrolling tabs, responsive grids/charts/typography, and iOS Safari dark input styling
 - **Visual polish**: Tab bar styling, active tab glow, card hover transitions
 
 ## Tabs (7 total)
@@ -128,7 +128,7 @@ app/
 - **Comfort tiers**: Defined inline in `renderAffordability`, `renderOptimize`, and copy callbacks — could extract to shared helper.
 - **`taxBreakdown` useMemo**: Has duplicate bracket data for display only. Actual computation uses `calcFedTax`/`calcCAStateTax`.
 - **URL params**: Hydrated on mount, debounced sync on state changes.
-- **Responsive CSS**: `<style>` tag with 3 breakpoints (900px tablet, 600px mobile, 400px extra-small) + 36 CSS class targets for `!important` overrides on inline styles. Key classes: `hpo-container`, `hpo-grid`, `hpo-card`, `hpo-plan-card`, `hpo-panel`, `hpo-metrics`, `hpo-tabs`, `hpo-two-col`, `hpo-three-col`, `hpo-preset-grid`, `hpo-comfort-chips`, `hpo-spectrum-cards`, `hpo-deep-dive-metrics`, `hpo-monthly-breakdown`, `hpo-tornado-row`, `hpo-matrix-wrapper`, `hpo-share-btns`, `hpo-cta-btn`, `hpo-verdict-emoji`, `hpo-verdict-text`, `hpo-hero-price`, `hpo-section-title`, `hpo-tax-rates`, `hpo-tax-rate-val`, `hpo-chart`, `hpo-scenario-cards`, `hpo-assumptions-grid`, `hpo-cost-table`, and more.
+- **Responsive CSS**: `<style>` tag with global resets (iOS Safari dark inputs via `!important`, `color-scheme: dark`, `appearance: none`) + 3 breakpoints (900px tablet, 600px mobile, 400px extra-small) + 36 CSS class targets for `!important` overrides on inline styles. Dark background (`#0c1220`) set on `<html>` and `<body>` in layout.js to prevent iOS white bleed-through during elastic scrolling.
 - **Hook ordering**: Copy callbacks (`copyResultsSummary`, `copyAffordabilitySummary`) must be declared AFTER `estimatedTakeHome` and `affordability` to avoid TDZ errors.
 
 ## ROADMAP Status
