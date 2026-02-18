@@ -295,11 +295,11 @@ const PresetSelector = ({ onSelect, activePreset }) => {
 
 // Main Component
 export default function HomePurchaseOptimizer() {
-  const [homePrice, setHomePrice] = useState(2000000);
-  const [totalSavings, setTotalSavings] = useState(1000000);
-  const [stockPortfolio, setStockPortfolio] = useState(1500000);
-  const [grossIncome, setGrossIncome] = useState(1500000);
-  const [monthlyRent, setMonthlyRent] = useState(8000);
+  const [homePrice, setHomePrice] = useState(1000000);
+  const [totalSavings, setTotalSavings] = useState(200000);
+  const [stockPortfolio, setStockPortfolio] = useState(500000);
+  const [grossIncome, setGrossIncome] = useState(500000);
+  const [monthlyRent, setMonthlyRent] = useState(5000);
   const [rentGrowth, setRentGrowth] = useState(3); // Annual rent increase %
   const [filingStatus, setFilingStatus] = useState('married');
   const [mortgageRate, setMortgageRate] = useState(6.5);
@@ -310,7 +310,7 @@ export default function HomePurchaseOptimizer() {
   const [dividendYield, setDividendYield] = useState(2); // Actual income (dividends, interest) - for investment interest deduction
   const [homeAppreciation, setHomeAppreciation] = useState(5);
   const [loanTerm, setLoanTerm] = useState(30);
-  const [minBuffer, setMinBuffer] = useState(300000);
+  const [minBuffer, setMinBuffer] = useState(0);
   
   // Manual mode inputs
   const [manualDpPct, setManualDpPct] = useState(30);
@@ -497,11 +497,11 @@ export default function HomePurchaseOptimizer() {
 
   // Default values for comparison (only include non-default in URL)
   const defaults = useMemo(() => ({
-    homePrice: 2000000, totalSavings: 1000000, stockPortfolio: 1500000,
-    grossIncome: 1500000, monthlyRent: 8000, rentGrowth: 3,
+    homePrice: 1000000, totalSavings: 200000, stockPortfolio: 500000,
+    grossIncome: 500000, monthlyRent: 5000, rentGrowth: 3,
     filingStatus: 'married', mortgageRate: 6.5, marginRate: 6.5,
     helocRate: 8.5, cashOutRefiRate: 6.75, investmentReturn: 8,
-    dividendYield: 2, homeAppreciation: 5, loanTerm: 30, minBuffer: 300000,
+    dividendYield: 2, homeAppreciation: 5, loanTerm: 30, minBuffer: 0,
     manualDpPct: 30, manualMarginPct: 0, manualHelocPct: 0, activeTab: 'optimize'
   }), []);
 
@@ -4015,11 +4015,37 @@ export default function HomePurchaseOptimizer() {
                 Your savings could support a bigger down payment, but monthly costs at this price are near the lender max (43% DTI).
               </div>
             )}
-            {affTargetComfort !== null && (
-              <div style={{ fontSize: '0.8rem', color: '#60a5fa', marginBottom: '20px', padding: '10px 16px', background: 'rgba(96,165,250,0.08)', borderRadius: '8px', border: '1px solid rgba(96,165,250,0.2)', maxWidth: '550px', margin: '0 auto 20px' }}>
-                At your {fmtPctWhole(affTargetComfort * 100)} comfort target. Select "Max" above to see the absolute maximum.
+            {/* Comfort Target Chips — integrated for direct control */}
+            <div style={{ marginBottom: '20px', maxWidth: '550px', margin: '0 auto 20px' }}>
+              <div style={{ fontSize: '0.75rem', color: '#8b8ba7', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '10px' }}>How much of your paycheck for housing?</div>
+              <div className="hpo-comfort-chips" style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '8px', marginBottom: '12px' }}>
+                {[
+                  { value: 0.20, label: '20%', desc: 'Excellent', color: '#4ade80' },
+                  { value: 0.30, label: '30%', desc: 'Comfortable', color: '#60a5fa' },
+                  { value: 0.40, label: '40%', desc: 'Stretched', color: '#fbbf24' },
+                  { value: 0.50, label: '50%', desc: 'Heavy', color: '#f97316' },
+                  { value: 0.75, label: '75%', desc: 'Extreme', color: '#f87171' },
+                  { value: null, label: 'Max', desc: 'DTI Ceiling', color: '#a78bfa' },
+                ].map((opt, i) => {
+                  const isSelected = affTargetComfort === opt.value;
+                  return (
+                    <div key={i} onClick={() => setAffTargetComfort(opt.value)} style={{
+                      background: isSelected ? `${opt.color}20` : 'rgba(255,255,255,0.03)',
+                      border: isSelected ? `2px solid ${opt.color}` : '1px solid rgba(255,255,255,0.06)',
+                      borderRadius: '10px', padding: '10px 6px', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s',
+                    }}>
+                      <div style={{ fontSize: '1rem', fontWeight: '700', color: isSelected ? opt.color : '#fff', marginBottom: '2px' }}>{opt.label}</div>
+                      <div style={{ fontSize: '0.6rem', color: isSelected ? opt.color : '#8b8ba7', fontWeight: '600' }}>{opt.desc}</div>
+                    </div>
+                  );
+                })}
               </div>
-            )}
+              {affTargetComfort !== null && (
+                <div style={{ fontSize: '0.8rem', color: '#60a5fa', padding: '8px 14px', background: 'rgba(96,165,250,0.08)', borderRadius: '8px', border: '1px solid rgba(96,165,250,0.2)' }}>
+                  Showing homes where housing costs ~{fmtPctWhole(affTargetComfort * 100)} of your take-home ({fmt$(monthlyTakeHome)}/mo). Select "Max" for the absolute ceiling.
+                </div>
+              )}
+            </div>
             <button onClick={() => { setHomePrice(recommended.maxPrice); setActiveTab('optimize'); }} style={{
               padding: '14px 32px', borderRadius: '10px', border: 'none', cursor: 'pointer', fontSize: '1rem', fontWeight: '600',
               background: 'linear-gradient(135deg, #f97316, #eab308)', color: '#fff',
@@ -4040,44 +4066,6 @@ export default function HomePurchaseOptimizer() {
               <CurrencyInput value={affMonthlyOtherDebt} onChange={setAffMonthlyOtherDebt} min={0} max={50000} style={s.input} />
             </div>
           </div>
-        </div>
-
-        {/* Comfort Target Selector */}
-        <div className="hpo-card" style={s.card}>
-          <h3 style={{ ...s.section, marginTop: 0 }}>How much of your paycheck for housing?</h3>
-          <p style={{ fontSize: '0.85rem', color: '#8b8ba7', marginBottom: '8px' }}>
-            Financial advisors use the "30% rule" — spend no more than 30% of gross income on housing. But for high earners in California paying ~45% effective tax, 30% of gross is actually ~55% of take-home.
-          </p>
-          <p style={{ fontSize: '0.85rem', color: '#8b8ba7', marginBottom: '16px' }}>
-            These targets use your <strong style={{ color: '#fff' }}>after-tax take-home</strong> instead — a more honest picture. Pick a comfort level, or select Max to see the absolute ceiling lenders would approve.
-          </p>
-          <div className="hpo-comfort-chips" style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '10px' }}>
-            {[
-              { value: 0.20, label: '20%', desc: 'Excellent', color: '#4ade80' },
-              { value: 0.30, label: '30%', desc: 'Comfortable', color: '#60a5fa' },
-              { value: 0.40, label: '40%', desc: 'Stretched', color: '#fbbf24' },
-              { value: 0.50, label: '50%', desc: 'Heavy', color: '#f97316' },
-              { value: 0.75, label: '75%', desc: 'Extreme', color: '#f87171' },
-              { value: null, label: 'Max', desc: 'DTI Ceiling', color: '#a78bfa' },
-            ].map((opt, i) => {
-              const isSelected = affTargetComfort === opt.value;
-              return (
-                <div key={i} onClick={() => setAffTargetComfort(opt.value)} style={{
-                  background: isSelected ? `${opt.color}20` : 'rgba(255,255,255,0.03)',
-                  border: isSelected ? `2px solid ${opt.color}` : '1px solid rgba(255,255,255,0.06)',
-                  borderRadius: '10px', padding: '12px 8px', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s',
-                }}>
-                  <div style={{ fontSize: '1.1rem', fontWeight: '700', color: isSelected ? opt.color : '#fff', marginBottom: '2px' }}>{opt.label}</div>
-                  <div style={{ fontSize: '0.65rem', color: isSelected ? opt.color : '#8b8ba7', fontWeight: '600' }}>{opt.desc}</div>
-                </div>
-              );
-            })}
-          </div>
-          {affTargetComfort !== null && (
-            <div style={{ marginTop: '12px', fontSize: '0.8rem', color: '#60a5fa', padding: '10px 16px', background: 'rgba(96,165,250,0.08)', borderRadius: '8px', border: '1px solid rgba(96,165,250,0.2)' }}>
-              Showing homes where housing costs ~{fmtPctWhole(affTargetComfort * 100)} of your take-home ({fmt$(monthlyTakeHome)}/mo). Still capped at lender limits (43% DTI).
-            </div>
-          )}
         </div>
 
         {/* Section B: The Spectrum */}
