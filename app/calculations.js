@@ -1,15 +1,5 @@
 // calculations.js - Financial calculations and utilities for Home Purchase Optimizer
 
-// San Francisco specific constants
-export const SF = { 
-  propTaxRate: 0.0118, 
-  transferTax: 0.0068, 
-  parcelTax: 350, 
-  realtorComm: 0.05, 
-  closeBuy: 0.015, 
-  closeSell: 0.01 
-};
-
 // URL param mapping (short keys for cleaner URLs)
 export const URL_PARAM_MAP = {
   homePrice: 'hp',
@@ -32,6 +22,7 @@ export const URL_PARAM_MAP = {
   manualMarginPct: 'mmp',
   manualHelocPct: 'mhp',
   activeTab: 'tab',
+  location: 'loc',
 };
 
 // Reverse mapping for hydration
@@ -45,7 +36,7 @@ export const fmtPct = (v) => `${((v || 0) * 100).toFixed(2)}%`;
 export const fmtPctWhole = (v) => `${(v || 0).toFixed(0)}%`;
 export const fmtNum = (v) => new Intl.NumberFormat('en-US').format(v || 0);
 
-// Tax calculation functions
+// Tax calculation functions — California
 export const calcCAStateTax = (inc, stat) => {
   const rates = [{min:0,max:10412,r:0.01},{min:10412,max:24684,r:0.02},{min:24684,max:38959,r:0.04},{min:38959,max:54081,r:0.06},{min:54081,max:68350,r:0.08},{min:68350,max:349137,r:0.093},{min:349137,max:418961,r:0.103},{min:418961,max:698271,r:0.113},{min:698271,max:Infinity,r:0.123}];
   const m = stat === 'married' ? 2 : 1;
@@ -77,16 +68,116 @@ export const getCARate = (inc, stat) => {
     if (inc >= b.min * m && inc < b.max * m) { baseRate = b.r; break; }
   }
   // Add CA Mental Health Services Tax (1% on income over $1M)
-  // Note: $1M threshold is NOT doubled for married - it's $1M for all filers
   if (inc > 1000000) baseRate += 0.01;
   return baseRate;
 };
 
+// Tax calculation functions — New York State
+export const calcNYStateTax = (inc, stat) => {
+  const rates = [{min:0,max:8500,r:0.04},{min:8500,max:11700,r:0.045},{min:11700,max:13900,r:0.0525},{min:13900,max:80650,r:0.0585},{min:80650,max:215400,r:0.0625},{min:215400,max:1077550,r:0.0685},{min:1077550,max:5000000,r:0.0965},{min:5000000,max:25000000,r:0.103},{min:25000000,max:Infinity,r:0.109}];
+  const m = stat === 'married' ? 2 : 1;
+  let tax = 0;
+  for (const b of rates) if (inc > b.min * m) tax += Math.max(0, Math.min(inc, b.max * m) - b.min * m) * b.r;
+  return tax;
+};
+
+export const getNYStateRate = (inc, stat) => {
+  const m = stat === 'married' ? 2 : 1;
+  const br = [{min:0,max:8500,r:0.04},{min:8500,max:11700,r:0.045},{min:11700,max:13900,r:0.0525},{min:13900,max:80650,r:0.0585},{min:80650,max:215400,r:0.0625},{min:215400,max:1077550,r:0.0685},{min:1077550,max:5000000,r:0.0965},{min:5000000,max:25000000,r:0.103},{min:25000000,max:Infinity,r:0.109}];
+  for (const b of br) if (inc >= b.min * m && inc < b.max * m) return b.r;
+  return 0.109;
+};
+
+// Tax calculation functions — NYC local
+export const calcNYCLocalTax = (inc, stat) => {
+  const rates = [{min:0,max:12000,r:0.03078},{min:12000,max:25000,r:0.03762},{min:25000,max:50000,r:0.03819},{min:50000,max:Infinity,r:0.03876}];
+  const m = stat === 'married' ? 2 : 1;
+  let tax = 0;
+  for (const b of rates) if (inc > b.min * m) tax += Math.max(0, Math.min(inc, b.max * m) - b.min * m) * b.r;
+  return tax;
+};
+
+export const getNYCLocalRate = (inc, stat) => {
+  const m = stat === 'married' ? 2 : 1;
+  const br = [{min:0,max:12000,r:0.03078},{min:12000,max:25000,r:0.03762},{min:25000,max:50000,r:0.03819},{min:50000,max:Infinity,r:0.03876}];
+  for (const b of br) if (inc >= b.min * m && inc < b.max * m) return b.r;
+  return 0.03876;
+};
+
+// Tax calculation functions — Illinois (flat rate)
+export const calcILStateTax = (inc, stat) => {
+  const exemption = stat === 'married' ? 4850 : 2425;
+  return Math.max(0, inc - exemption) * 0.0495;
+};
+
+// Location configurations
+export const LOCATIONS = {
+  sf: {
+    key: 'sf', label: 'San Francisco, CA', shortLabel: 'SF', emoji: '\u{1F309}', state: 'CA',
+    propTaxRate: 0.0118, transferTax: 0.0068, parcelTax: 350,
+    realtorComm: 0.05, closeBuy: 0.015, closeSell: 0.01,
+    insuranceRate: 0.003, maintenanceRate: 0.01, pmiRate: 0.005,
+    mansionTax: null,
+    hasStateIncomeTax: true,
+    calcStateTax: (inc, stat) => calcCAStateTax(inc, stat),
+    getStateRate: (inc, stat) => getCARate(inc, stat),
+    stateStdDeduction: (stat) => stat === 'married' ? 10726 : 5363,
+    stateMortgageDeductionLimit: 1000000,
+    payrollTaxRate: 0.011, payrollTaxCap: null,
+    hasProp13: true, propTaxGrowthCap: 0.02,
+  },
+  fl: {
+    key: 'fl', label: 'Florida', shortLabel: 'FL', emoji: '\u{1F334}', state: 'FL',
+    propTaxRate: 0.0089, transferTax: 0.007, parcelTax: 0,
+    realtorComm: 0.05, closeBuy: 0.015, closeSell: 0.01,
+    insuranceRate: 0.005, maintenanceRate: 0.01, pmiRate: 0.005,
+    mansionTax: null,
+    hasStateIncomeTax: false,
+    calcStateTax: () => 0,
+    getStateRate: () => 0,
+    stateStdDeduction: () => 0,
+    stateMortgageDeductionLimit: 750000,
+    payrollTaxRate: 0, payrollTaxCap: null,
+    hasProp13: false, propTaxGrowthCap: null,
+  },
+  nyc: {
+    key: 'nyc', label: 'New York City', shortLabel: 'NYC', emoji: '\u{1F5FD}', state: 'NY',
+    propTaxRate: 0.0105, transferTax: 0.014, parcelTax: 0,
+    realtorComm: 0.05, closeBuy: 0.02, closeSell: 0.01,
+    insuranceRate: 0.003, maintenanceRate: 0.01, pmiRate: 0.005,
+    mansionTax: { threshold: 1000000, rate: 0.01 },
+    hasStateIncomeTax: true,
+    calcStateTax: (inc, stat) => calcNYStateTax(inc, stat) + calcNYCLocalTax(inc, stat),
+    getStateRate: (inc, stat) => getNYStateRate(inc, stat) + getNYCLocalRate(inc, stat),
+    stateStdDeduction: (stat) => stat === 'married' ? 16050 : 8000,
+    stateMortgageDeductionLimit: 750000,
+    payrollTaxRate: 0, payrollTaxCap: null,
+    hasProp13: false, propTaxGrowthCap: null,
+  },
+  chi: {
+    key: 'chi', label: 'Chicago, IL', shortLabel: 'Chicago', emoji: '\u{1F3D9}', state: 'IL',
+    propTaxRate: 0.021, transferTax: 0.012, parcelTax: 0,
+    realtorComm: 0.05, closeBuy: 0.015, closeSell: 0.01,
+    insuranceRate: 0.003, maintenanceRate: 0.01, pmiRate: 0.005,
+    mansionTax: null,
+    hasStateIncomeTax: true,
+    calcStateTax: (inc, stat) => calcILStateTax(inc, stat),
+    getStateRate: () => 0.0495,
+    stateStdDeduction: () => 0,
+    stateMortgageDeductionLimit: 750000,
+    payrollTaxRate: 0, payrollTaxCap: null,
+    hasProp13: false, propTaxGrowthCap: null,
+  },
+};
+
+// Backward compatibility alias
+export const SF = LOCATIONS.sf;
+
 // Loan calculation functions
-export const calcMonthly = (p, r, y) => { 
-  if (p <= 0) return 0; 
-  const mr = r/12, n = y*12; 
-  return mr === 0 ? p/n : p*(mr*Math.pow(1+mr,n))/(Math.pow(1+mr,n)-1); 
+export const calcMonthly = (p, r, y) => {
+  if (p <= 0) return 0;
+  const mr = r/12, n = y*12;
+  return mr === 0 ? p/n : p*(mr*Math.pow(1+mr,n))/(Math.pow(1+mr,n)-1);
 };
 
 export const genAmort = (principal, rate, years) => {
@@ -110,16 +201,19 @@ export const calcPMI = (loan, home) => {
   return { monthly, years: months/12, total: monthly * months };
 };
 
-export const calcTxCosts = (price, loan) => {
-  const buy = price * SF.transferTax + price * SF.closeBuy + loan * 0.005 + Math.min(15000, price * 0.003) + 2500;
-  const sell = price * SF.realtorComm + price * SF.transferTax + price * SF.closeSell + Math.min(50000, price * 0.01);
+export const calcTxCosts = (price, loan, loc = LOCATIONS.sf) => {
+  let buy = price * loc.transferTax + price * loc.closeBuy + loan * 0.005 + Math.min(15000, price * 0.003) + 2500;
+  if (loc.mansionTax && price > loc.mansionTax.threshold) {
+    buy += price * loc.mansionTax.rate;
+  }
+  const sell = price * loc.realtorComm + price * loc.transferTax + price * loc.closeSell + Math.min(50000, price * 0.01);
   return { buy, sell, total: buy + sell };
 };
 
 // Core scenario calculation
 export const calcScenario = (params) => {
-  const { homePrice, cashDown, marginLoan, helocAmount, cashOutRefiAmount = 0, mortgageRate, cashOutRefiRate = 0.0675, loanTerm, appreciationRate, investmentReturn, dividendYield = 0.02, monthlyRent, rentGrowthRate = 0.03, marginRate, helocRate, fedRate, caRate, stateTax, stdDeduction, filingStatus = 'married', grossIncome = 0 } = params;
-  
+  const { homePrice, cashDown, marginLoan, helocAmount, cashOutRefiAmount = 0, mortgageRate, cashOutRefiRate = 0.0675, loanTerm, appreciationRate, investmentReturn, dividendYield = 0.02, monthlyRent, rentGrowthRate = 0.03, marginRate, helocRate, fedRate, stateRate, stateTax, stdDeduction, filingStatus = 'married', grossIncome = 0, loc = LOCATIONS.sf } = params;
+
   // Determine if this is a cash purchase (no mortgage)
   const totalEquityInput = cashDown + marginLoan;
   const needsMortgage = totalEquityInput < homePrice;
@@ -135,12 +229,12 @@ export const calcScenario = (params) => {
   // HELOC can only be taken on a home you own outright (no mortgage)
   const actualHELOC = (!needsMortgage && !isCashOutRefi) ? helocAmount : 0;
 
-  const propTax = homePrice * SF.propTaxRate + SF.parcelTax;
-  const insurance = homePrice * 0.003;
-  const maintenance = homePrice * 0.01;
+  const propTax = homePrice * loc.propTaxRate + loc.parcelTax;
+  const insurance = homePrice * loc.insuranceRate;
+  const maintenance = homePrice * loc.maintenanceRate;
   const totalLoanForPMI = isCashOutRefi ? totalRefiLoan : mortgageLoan;
   const pmi = calcPMI(totalLoanForPMI, homePrice);
-  const tx = calcTxCosts(homePrice, totalLoanForPMI);
+  const tx = calcTxCosts(homePrice, totalLoanForPMI, loc);
   const cashOutRefiClosingCosts = isCashOutRefi ? totalRefiLoan * 0.025 : 0;
   const amort = isCashOutRefi
     ? genAmort(totalRefiLoan, cashOutRefiRate, loanTerm)
@@ -170,7 +264,7 @@ export const calcScenario = (params) => {
   const acquisitionDebt = isCashOutRefi ? baseMortgageLoan : mortgageLoan;
   const acquisitionDebtRate = isCashOutRefi ? cashOutRefiRate : mortgageRate;
   const federalDeductibleMortgageInterest = Math.min(acquisitionDebt, 750000) * acquisitionDebtRate;
-  const caDeductibleMortgageInterest = Math.min(acquisitionDebt, 1000000) * acquisitionDebtRate;
+  const stateDeductibleMortgageInterest = Math.min(acquisitionDebt, loc.stateMortgageDeductionLimit) * acquisitionDebtRate;
   const deductibleMortgageInterest = federalDeductibleMortgageInterest;
   const nonDeductibleMortgageInterest = acquisitionDebtInterest - federalDeductibleMortgageInterest;
 
@@ -197,25 +291,25 @@ export const calcScenario = (params) => {
   // Tax benefits calculation
   const federalMortgageTaxBenefit = shouldItemize ? Math.max(0, itemizedTotal - stdDeduction) * fedRate : 0;
 
-  // California mortgage interest benefit
-  const caStdDeduction = filingStatus === 'married' ? 10726 : 5363;
-  const caItemizedTotal = caDeductibleMortgageInterest + propTax;
-  const shouldItemizeCA = caItemizedTotal > caStdDeduction;
-  const caMortgageTaxBenefit = shouldItemizeCA ? Math.max(0, caItemizedTotal - caStdDeduction) * caRate : 0;
+  // State mortgage interest benefit
+  const locStdDeduction = loc.stateStdDeduction(filingStatus);
+  const stateItemizedTotal = stateDeductibleMortgageInterest + propTax;
+  const shouldItemizeState = loc.hasStateIncomeTax && stateItemizedTotal > locStdDeduction;
+  const stateMortgageTaxBenefit = shouldItemizeState ? Math.max(0, stateItemizedTotal - locStdDeduction) * stateRate : 0;
 
-  const mortgageTaxBenefit = federalMortgageTaxBenefit + caMortgageTaxBenefit;
+  const mortgageTaxBenefit = federalMortgageTaxBenefit + stateMortgageTaxBenefit;
 
   // Investment interest benefit
   const investmentInterestDeduction = deductibleMarginInterest + deductibleCashOutInterest + deductibleHELOCInterest;
-  const investInterestTaxBenefit = investmentInterestDeduction * (fedRate + caRate);
+  const investInterestTaxBenefit = investmentInterestDeduction * (fedRate + stateRate);
 
   const totalTaxBenefit = mortgageTaxBenefit + investInterestTaxBenefit;
 
   // Effective interest rates (after tax benefit)
   const netMortgageInterest = acquisitionDebtInterest - (shouldItemize ? deductibleMortgageInterest * fedRate : 0);
-  const netCashOutInterest = cashOutInterestAnnual - (deductibleCashOutInterest * (fedRate + caRate));
-  const netMarginInterest = marginInterestAnnual - (deductibleMarginInterest * (fedRate + caRate));
-  const netHELOCInterest = helocInterestAnnual - (deductibleHELOCInterest * (fedRate + caRate));
+  const netCashOutInterest = cashOutInterestAnnual - (deductibleCashOutInterest * (fedRate + stateRate));
+  const netMarginInterest = marginInterestAnnual - (deductibleMarginInterest * (fedRate + stateRate));
+  const netHELOCInterest = helocInterestAnnual - (deductibleHELOCInterest * (fedRate + stateRate));
 
   const mortgageEffectiveRate = acquisitionDebt > 0 ? netMortgageInterest / acquisitionDebt : 0;
   const cashOutEffectiveRate = actualCashOutAmount > 0 ? netCashOutInterest / actualCashOutAmount : 0;
@@ -242,7 +336,7 @@ export const calcScenario = (params) => {
     totalTaxBenefit: -totalTaxBenefit,
     netTotal: totalInterestAnnual + pmi.monthly * 12 + propTax + insurance + maintenance - totalTaxBenefit
   };
-  
+
   // NIIT calculation
   const niitThreshold = filingStatus === 'married' ? 250000 : 200000;
   const subjectToNIIT = grossIncome > niitThreshold;
@@ -257,13 +351,16 @@ export const calcScenario = (params) => {
     const homeVal = homePrice * Math.pow(1 + appreciationRate, y);
     const amortData = amort.schedule[y-1] || amort.schedule[amort.schedule.length - 1] || { balance: 0, yearlyInterest: 0 };
     const loanBal = amortData.balance || 0;
-    
+
     const equity = homeVal - loanBal - marginLoan - actualHELOC;
-    
-    const yPropTax = propTax * Math.pow(1.02, y - 1);
-    const marketPropTax = homeVal * SF.propTaxRate;
-    const prop13Savings = marketPropTax - yPropTax;
-    
+
+    // Property tax: Prop 13 caps increases at 2%/year (CA only), otherwise reassess at market
+    const yPropTax = loc.hasProp13
+      ? propTax * Math.pow(1 + loc.propTaxGrowthCap, y - 1)
+      : homeVal * loc.propTaxRate + loc.parcelTax;
+    const marketPropTax = homeVal * loc.propTaxRate;
+    const prop13Savings = loc.hasProp13 ? marketPropTax - yPropTax : 0;
+
     const yMortgageInt = amortData.yearlyInterest || (acquisitionDebtInterest * Math.pow(0.97, y));
     const yMortgagePrincipal = amortData.yearlyPrincipal || (amort.monthlyPayment * 12 - yMortgageInt);
 
@@ -274,29 +371,29 @@ export const calcScenario = (params) => {
     const yFedItemized = yFedDeductibleInt + ySaltCapped;
     const yFedMortgageBenefit = yFedItemized > stdDeduction ? (yFedItemized - stdDeduction) * fedRate : 0;
 
-    const yCADeductibleInt = yMortgageInt * (acquisitionDebt <= 1000000 ? 1 : 1000000/acquisitionDebt);
-    const yCAItemized = yCADeductibleInt + yPropTax;
-    const yCAMortgageBenefit = yCAItemized > caStdDeduction ? (yCAItemized - caStdDeduction) * caRate : 0;
+    const yStateDeductibleInt = yMortgageInt * (acquisitionDebt <= loc.stateMortgageDeductionLimit ? 1 : loc.stateMortgageDeductionLimit/acquisitionDebt);
+    const yStateItemized = yStateDeductibleInt + yPropTax;
+    const yStateMortgageBenefit = loc.hasStateIncomeTax && yStateItemized > locStdDeduction ? (yStateItemized - locStdDeduction) * stateRate : 0;
 
-    const yMortgageBenefit = yFedMortgageBenefit + yCAMortgageBenefit;
+    const yMortgageBenefit = yFedMortgageBenefit + yStateMortgageBenefit;
     const yInvestBenefit = investInterestTaxBenefit;
     const yTotalBenefit = yMortgageBenefit + yInvestBenefit;
-    
-    const yOwnerOutflow = (amort.monthlyPayment * 12) + marginInterestAnnual + helocInterestAnnual + 
-                          (y <= pmi.years ? pmi.monthly * 12 : 0) + 
+
+    const yOwnerOutflow = (amort.monthlyPayment * 12) + marginInterestAnnual + helocInterestAnnual +
+                          (y <= pmi.years ? pmi.monthly * 12 : 0) +
                           yPropTax + insurance + maintenance - yTotalBenefit;
-    
+
     const yRent = monthlyRent * 12 * Math.pow(1 + rentGrowthRate, y - 1);
-    
+
     renterPortfolio = renterPortfolio * (1 + afterNIITReturn);
 
     const costDiff = yOwnerOutflow - yRent;
     if (costDiff > 0) {
       renterPortfolio += costDiff;
     }
-    
+
     const ownerWealth = equity - tx.sell;
-    
+
     yearlyAnalysis.push({
       year: y,
       homeValue: homeVal,
@@ -333,7 +430,7 @@ export const calcScenario = (params) => {
     niitRate,
     afterNIITReturn
   };
-  
+
   return {
     homePrice,
     totalDown: totalEquityInput,
@@ -371,18 +468,18 @@ export const calcScenario = (params) => {
     itemizedTotal,
     stdDeduction,
     shouldItemize,
-    caItemizedTotal,
-    caStdDeduction,
-    shouldItemizeCA,
+    stateItemizedTotal,
+    stateStdDeduction: locStdDeduction,
+    shouldItemizeState,
     saltCapped,
     saltLost,
     federalMortgageTaxBenefit,
-    caMortgageTaxBenefit,
+    stateMortgageTaxBenefit,
     mortgageTaxBenefit,
     investInterestTaxBenefit,
     totalTaxBenefit,
     federalDeductibleMortgageInterest,
-    caDeductibleMortgageInterest,
+    stateDeductibleMortgageInterest,
     mortgageEffectiveRate,
     cashOutEffectiveRate,
     marginEffectiveRate,
@@ -402,94 +499,94 @@ export const calcScenario = (params) => {
 
 // Optimization engine
 export const runOptimization = (params) => {
-  const { homePrice, totalSavings, stockPortfolio, mortgageRate, cashOutRefiRate = 0.0675, loanTerm, appreciationRate, investmentReturn, dividendYield = 0.02, monthlyRent, rentGrowthRate = 0.03, marginRate, helocRate, fedRate, caRate, stateTax, stdDeduction, minBuffer, filingStatus = 'married', grossIncome = 0 } = params;
-  
+  const { homePrice, totalSavings, stockPortfolio, mortgageRate, cashOutRefiRate = 0.0675, loanTerm, appreciationRate, investmentReturn, dividendYield = 0.02, monthlyRent, rentGrowthRate = 0.03, marginRate, helocRate, fedRate, stateRate, stateTax, stdDeduction, minBuffer, filingStatus = 'married', grossIncome = 0, loc = LOCATIONS.sf } = params;
+
   const results = [];
   const maxMarginPct = 0.30;
-  
+
   // Strategy 1: Traditional (cash down + mortgage)
   for (const dpPct of [0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40, 0.50]) {
     const cashDown = homePrice * dpPct;
     const scenario = calcScenario({
       homePrice, cashDown, marginLoan: 0, helocAmount: 0,
       mortgageRate, loanTerm, appreciationRate, investmentReturn, dividendYield, monthlyRent, rentGrowthRate,
-      marginRate, helocRate, fedRate, caRate, stateTax, stdDeduction, filingStatus, grossIncome
+      marginRate, helocRate, fedRate, stateRate, stateTax, stdDeduction, filingStatus, grossIncome, loc
     });
-    
+
     const remaining = totalSavings - cashDown - scenario.txCosts.buy;
     if (remaining >= minBuffer && cashDown <= totalSavings - minBuffer) {
-      results.push({ 
-        ...scenario, 
-        strategy: 'Traditional', 
-        strategyDesc: `${(dpPct*100).toFixed(0)}% cash down + Mortgage`, 
-        remaining, 
-        riskLevel: 'Low', 
-        dpPct: dpPct * 100 
+      results.push({
+        ...scenario,
+        strategy: 'Traditional',
+        strategyDesc: `${(dpPct*100).toFixed(0)}% cash down + Mortgage`,
+        remaining,
+        riskLevel: 'Low',
+        dpPct: dpPct * 100
       });
     }
   }
-  
+
   // Strategy 2: Margin + Mortgage (use margin for part of down payment)
   for (const dpPct of [0.20, 0.25, 0.30, 0.35, 0.40, 0.50]) {
     for (const marginPct of [0.10, 0.15, 0.20, 0.25, 0.30]) {
       const marginLoan = stockPortfolio * marginPct;
       const totalDown = homePrice * dpPct;
       const cashDown = Math.max(0, totalDown - marginLoan);
-      
+
       if (cashDown > totalSavings - minBuffer) continue;
       if (marginLoan > stockPortfolio * maxMarginPct) continue;
-      
+
       const scenario = calcScenario({
         homePrice, cashDown, marginLoan, helocAmount: 0,
         mortgageRate, loanTerm, appreciationRate, investmentReturn, dividendYield, monthlyRent,
-        marginRate, helocRate, fedRate, caRate, stateTax, stdDeduction, filingStatus, grossIncome
+        marginRate, helocRate, fedRate, stateRate, stateTax, stdDeduction, filingStatus, grossIncome, loc
       });
-      
+
       const remaining = totalSavings - cashDown - scenario.txCosts.buy;
       if (remaining >= minBuffer) {
-        results.push({ 
-          ...scenario, 
-          strategy: 'Margin + Mortgage', 
-          strategyDesc: `${fmtPctWhole(marginPct*100)} margin + cash → ${(dpPct*100).toFixed(0)}% down`, 
-          remaining, 
-          riskLevel: marginPct > 0.20 ? 'Medium-High' : 'Medium', 
-          dpPct: dpPct * 100 
+        results.push({
+          ...scenario,
+          strategy: 'Margin + Mortgage',
+          strategyDesc: `${fmtPctWhole(marginPct*100)} margin + cash → ${(dpPct*100).toFixed(0)}% down`,
+          remaining,
+          riskLevel: marginPct > 0.20 ? 'Medium-High' : 'Medium',
+          dpPct: dpPct * 100
         });
       }
     }
   }
-  
+
   // Strategy 3: Full Cash Purchase + HELOC
   const maxMargin = stockPortfolio * maxMarginPct;
   const canBuyCash = totalSavings + maxMargin >= homePrice;
-  
+
   if (canBuyCash) {
     for (const marginPct of [0, 0.10, 0.15, 0.20, 0.25, 0.30]) {
       const marginLoan = stockPortfolio * marginPct;
       const cashNeeded = homePrice - marginLoan;
-      
+
       if (cashNeeded > totalSavings) continue;
-      
+
       for (const helocPct of [0.30, 0.40, 0.50, 0.60, 0.70, 0.80]) {
         const helocAmount = homePrice * helocPct;
-        
+
         const scenario = calcScenario({
           homePrice, cashDown: cashNeeded, marginLoan, helocAmount,
           mortgageRate, loanTerm, appreciationRate, investmentReturn, dividendYield, monthlyRent,
-          marginRate, helocRate, fedRate, caRate, stateTax, stdDeduction, filingStatus, grossIncome
+          marginRate, helocRate, fedRate, stateRate, stateTax, stdDeduction, filingStatus, grossIncome, loc
         });
-        
+
         const remaining = totalSavings - cashNeeded - scenario.txCosts.buy + helocAmount;
-        
+
         if (remaining >= minBuffer) {
           const stratName = marginLoan > 0 ? 'Margin + Cash + HELOC' : 'Cash + HELOC';
-          results.push({ 
-            ...scenario, 
-            strategy: stratName, 
-            strategyDesc: `${marginLoan > 0 ? `${fmtPctWhole(marginPct*100)} margin + ` : ''}Full cash + ${(helocPct*100).toFixed(0)}% HELOC`, 
-            remaining, 
-            riskLevel: marginPct > 0.20 ? 'High' : marginLoan > 0 ? 'Medium-High' : 'Medium', 
-            dpPct: 100 
+          results.push({
+            ...scenario,
+            strategy: stratName,
+            strategyDesc: `${marginLoan > 0 ? `${fmtPctWhole(marginPct*100)} margin + ` : ''}Full cash + ${(helocPct*100).toFixed(0)}% HELOC`,
+            remaining,
+            riskLevel: marginPct > 0.20 ? 'High' : marginLoan > 0 ? 'Medium-High' : 'Medium',
+            dpPct: 100
           });
         }
       }
@@ -512,7 +609,7 @@ export const runOptimization = (params) => {
         homePrice, cashDown, marginLoan: 0, helocAmount: 0,
         cashOutRefiAmount: cashOutAmount, cashOutRefiRate,
         mortgageRate, loanTerm, appreciationRate, investmentReturn, dividendYield, monthlyRent,
-        marginRate, helocRate, fedRate, caRate, stateTax, stdDeduction, filingStatus, grossIncome
+        marginRate, helocRate, fedRate, stateRate, stateTax, stdDeduction, filingStatus, grossIncome, loc
       });
 
       const remaining = totalSavings - cashDown - scenario.txCosts.buy + cashOutAmount;
@@ -537,7 +634,7 @@ export const runOptimization = (params) => {
     const breakEvenScore = r.breakEvenYear === 'Never' ? -3 : (30 - r.breakEvenYear) / 30 * 3;
     const riskScore = r.riskLevel === 'Low' ? 1.5 : r.riskLevel === 'Medium' ? 1 : r.riskLevel === 'Medium-High' ? 0.5 : 0;
     const effectiveRateScore = (0.08 - r.blendedEffectiveRate) * 20;
-    const bufferScore = Math.min(r.remaining / minBuffer, 2) * 0.5;
+    const bufferScore = Math.min(r.remaining / (minBuffer || 1), 2) * 0.5;
 
     return {
       ...r,
@@ -545,12 +642,12 @@ export const runOptimization = (params) => {
       score: advantageScore * 0.4 + breakEvenScore * 0.25 + riskScore * 0.1 + effectiveRateScore * 0.15 + bufferScore * 0.1
     };
   });
-  
+
   scored.sort((a, b) => b.score - a.score);
-  
+
   const cashNeededForFullCash = homePrice - maxMargin;
   const additionalNeeded = Math.max(0, cashNeededForFullCash - totalSavings + minBuffer);
-  
+
   return {
     allResults: scored,
     optimal: scored[0] || null,
@@ -568,14 +665,12 @@ export const runOptimization = (params) => {
 };
 
 // Affordability calculator
-export const calcAffordability = ({ grossIncome, totalSavings, mortgageRate, loanTerm, minBuffer, monthlyHOA = 0, monthlyOtherDebt = 0, monthlyRent = 0, effectiveTaxRate = 0.45, targetTakeHomePct = null }) => {
+export const calcAffordability = ({ grossIncome, totalSavings, mortgageRate, loanTerm, minBuffer, monthlyHOA = 0, monthlyOtherDebt = 0, monthlyRent = 0, effectiveTaxRate = 0.45, targetTakeHomePct = null, loc = LOCATIONS.sf }) => {
   const DTI_CEILING = 0.43;
   const DP_OPTIONS = [0.05, 0.10, 0.20, 0.30, 0.50];
   const rate = mortgageRate / 100;
   const mr = rate / 12;
   const n = loanTerm * 12;
-  const insuranceRate = 0.0035;
-  const pmiRate = 0.005;
   const monthlyTakeHome = grossIncome * (1 - effectiveTaxRate) / 12;
   const dtiMax = (grossIncome * DTI_CEILING / 12) - monthlyOtherDebt;
   const maxMonthlyHousing = targetTakeHomePct
@@ -587,17 +682,18 @@ export const calcAffordability = ({ grossIncome, totalSavings, mortgageRate, loa
 
     const loanFrac = 1 - dpPct;
     const piFactor = loanFrac > 0 ? (mr === 0 ? loanFrac / n : loanFrac * (mr * Math.pow(1 + mr, n)) / (Math.pow(1 + mr, n) - 1)) : 0;
-    const taxFactor = SF.propTaxRate / 12;
-    const insFactor = insuranceRate / 12;
-    const pmiFactor = loanFrac > 0.80 ? (loanFrac * pmiRate / 12) : 0;
+    const taxFactor = loc.propTaxRate / 12;
+    const insFactor = loc.insuranceRate / 12;
+    const pmiFactor = loanFrac > 0.80 ? (loanFrac * loc.pmiRate / 12) : 0;
     const perDollarCost = piFactor + taxFactor + insFactor + pmiFactor;
-    const fixedMonthly = monthlyHOA + (SF.parcelTax / 12);
+    const fixedMonthly = monthlyHOA + (loc.parcelTax / 12);
 
     const maxPriceByIncome = perDollarCost > 0 ? (maxMonthlyHousing - fixedMonthly) / perDollarCost : 0;
 
     const availableCash = totalSavings - minBuffer;
-    const closingFactor = SF.closeBuy + SF.transferTax + loanFrac * 0.005 + 0.003;
-    const cashPerDollar = dpPct + closingFactor;
+    const closingFactor = loc.closeBuy + loc.transferTax + loanFrac * 0.005 + 0.003;
+    const mansionTaxFactor = (loc.mansionTax && maxPriceByIncome > loc.mansionTax.threshold) ? loc.mansionTax.rate : 0;
+    const cashPerDollar = dpPct + closingFactor + mansionTaxFactor;
     const fixedClosing = 2500;
     const maxPriceBySavings = cashPerDollar > 0 ? (availableCash - fixedClosing) / cashPerDollar : 0;
 
@@ -606,12 +702,12 @@ export const calcAffordability = ({ grossIncome, totalSavings, mortgageRate, loa
 
     const loan = maxPrice * loanFrac;
     const pi = loanFrac > 0 ? calcMonthly(loan, rate, loanTerm) : 0;
-    const tax = maxPrice * SF.propTaxRate / 12;
-    const insurance = maxPrice * insuranceRate / 12;
-    const pmi = loanFrac > 0.80 ? loan * pmiRate / 12 : 0;
+    const tax = maxPrice * loc.propTaxRate / 12;
+    const insurance = maxPrice * loc.insuranceRate / 12;
+    const pmi = loanFrac > 0.80 ? loan * loc.pmiRate / 12 : 0;
     const monthlyPITI = pi + tax + insurance + pmi + monthlyHOA;
 
-    const txCosts = calcTxCosts(maxPrice, loan);
+    const txCosts = calcTxCosts(maxPrice, loan, loc);
     const cashNeeded = maxPrice * dpPct + txCosts.buy;
     const remaining = totalSavings - cashNeeded;
 

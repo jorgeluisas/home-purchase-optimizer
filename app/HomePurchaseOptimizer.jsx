@@ -4,9 +4,9 @@ import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area, ComposedChart, ReferenceLine, Label } from 'recharts';
 import {
-  SF, URL_PARAM_MAP, REVERSE_URL_MAP,
+  SF, LOCATIONS, URL_PARAM_MAP, REVERSE_URL_MAP,
   fmt$, fmtPct, fmtPctWhole, fmtNum,
-  calcCAStateTax, calcFedTax, getFedRate, getCARate,
+  calcFedTax, getFedRate,
   calcMonthly, genAmort, calcPMI, calcTxCosts,
   calcScenario, runOptimization, calcAffordability
 } from './calculations';
@@ -311,7 +311,9 @@ export default function HomePurchaseOptimizer() {
   const [homeAppreciation, setHomeAppreciation] = useState(5);
   const [loanTerm, setLoanTerm] = useState(30);
   const [minBuffer, setMinBuffer] = useState(0);
-  
+  const [selectedLocation, setSelectedLocation] = useState('sf');
+  const loc = LOCATIONS[selectedLocation];
+
   // Manual mode inputs
   const [manualDpPct, setManualDpPct] = useState(30);
   const [manualMarginPct, setManualMarginPct] = useState(0);
@@ -339,10 +341,10 @@ export default function HomePurchaseOptimizer() {
   const [isExpertMode, setIsExpertMode] = useState(false);
   const [showAdvancedInputs, setShowAdvancedInputs] = useState(false);
 
-  // Custom assumptions state (editable SF constants)
+  // Custom assumptions state (editable location-specific constants)
   const [customAssumptions, setCustomAssumptions] = useState({
-    propTaxRate: 1.18,      // % (SF default)
-    transferTax: 0.68,      // % (SF default)
+    propTaxRate: 1.18,      // % (default)
+    transferTax: 0.68,      // % (default)
     parcelTax: 350,         // $ annual
     realtorComm: 5,         // %
     closeBuy: 1.5,          // %
@@ -353,24 +355,51 @@ export default function HomePurchaseOptimizer() {
   });
   const [showAssumptions, setShowAssumptions] = useState(false);
   
-  // Check if assumptions have been modified from defaults
+  // Check if assumptions have been modified from current location defaults
   const assumptionsModified = useMemo(() => {
-    const defaults = {
-      propTaxRate: 1.18, transferTax: 0.68, parcelTax: 350,
-      realtorComm: 5, closeBuy: 1.5, closeSell: 1,
-      insuranceRate: 0.35, maintenanceRate: 1, pmiRate: 0.5
+    const locDefaults = {
+      propTaxRate: +(loc.propTaxRate * 100).toFixed(2),
+      transferTax: +(loc.transferTax * 100).toFixed(2),
+      parcelTax: loc.parcelTax,
+      realtorComm: +(loc.realtorComm * 100).toFixed(0),
+      closeBuy: +(loc.closeBuy * 100).toFixed(1),
+      closeSell: +(loc.closeSell * 100).toFixed(1),
+      insuranceRate: +(loc.insuranceRate * 100).toFixed(2),
+      maintenanceRate: +(loc.maintenanceRate * 100).toFixed(0),
+      pmiRate: +(loc.pmiRate * 100).toFixed(1),
     };
-    return Object.keys(defaults).some(k => customAssumptions[k] !== defaults[k]);
-  }, [customAssumptions]);
+    return Object.keys(locDefaults).some(k => customAssumptions[k] !== locDefaults[k]);
+  }, [customAssumptions, selectedLocation]);
 
-  // Reset assumptions to defaults
+  // Reset assumptions to current location defaults
   const resetAssumptions = useCallback(() => {
     setCustomAssumptions({
-      propTaxRate: 1.18, transferTax: 0.68, parcelTax: 350,
-      realtorComm: 5, closeBuy: 1.5, closeSell: 1,
-      insuranceRate: 0.35, maintenanceRate: 1, pmiRate: 0.5
+      propTaxRate: +(loc.propTaxRate * 100).toFixed(2),
+      transferTax: +(loc.transferTax * 100).toFixed(2),
+      parcelTax: loc.parcelTax,
+      realtorComm: +(loc.realtorComm * 100).toFixed(0),
+      closeBuy: +(loc.closeBuy * 100).toFixed(1),
+      closeSell: +(loc.closeSell * 100).toFixed(1),
+      insuranceRate: +(loc.insuranceRate * 100).toFixed(2),
+      maintenanceRate: +(loc.maintenanceRate * 100).toFixed(0),
+      pmiRate: +(loc.pmiRate * 100).toFixed(1),
     });
-  }, []);
+  }, [selectedLocation]);
+
+  // Sync customAssumptions when location changes
+  useEffect(() => {
+    setCustomAssumptions({
+      propTaxRate: +(loc.propTaxRate * 100).toFixed(2),
+      transferTax: +(loc.transferTax * 100).toFixed(2),
+      parcelTax: loc.parcelTax,
+      realtorComm: +(loc.realtorComm * 100).toFixed(0),
+      closeBuy: +(loc.closeBuy * 100).toFixed(1),
+      closeSell: +(loc.closeSell * 100).toFixed(1),
+      insuranceRate: +(loc.insuranceRate * 100).toFixed(2),
+      maintenanceRate: +(loc.maintenanceRate * 100).toFixed(0),
+      pmiRate: +(loc.pmiRate * 100).toFixed(1),
+    });
+  }, [selectedLocation]);
 
   // Apply preset function
   const applyPreset = useCallback((presetKey) => {
@@ -461,6 +490,7 @@ export default function HomePurchaseOptimizer() {
     manualMarginPct: setManualMarginPct,
     manualHelocPct: setManualHelocPct,
     activeTab: setActiveTab,
+    location: setSelectedLocation,
   }), []);
 
   // Hydrate state from URL on mount
@@ -475,7 +505,7 @@ export default function HomePurchaseOptimizer() {
       const stateKey = REVERSE_URL_MAP[shortKey];
       if (!stateKey || !stateSetters[stateKey]) return;
 
-      if (stateKey === 'filingStatus' || stateKey === 'activeTab') {
+      if (stateKey === 'filingStatus' || stateKey === 'activeTab' || stateKey === 'location') {
         stateSetters[stateKey](value);
       } else {
         const num = parseFloat(value);
@@ -489,11 +519,11 @@ export default function HomePurchaseOptimizer() {
     homePrice, totalSavings, stockPortfolio, grossIncome, monthlyRent, rentGrowth,
     filingStatus, mortgageRate, marginRate, helocRate, cashOutRefiRate,
     investmentReturn, dividendYield, homeAppreciation, loanTerm, minBuffer,
-    manualDpPct, manualMarginPct, manualHelocPct, activeTab
+    manualDpPct, manualMarginPct, manualHelocPct, activeTab, location: selectedLocation
   }), [homePrice, totalSavings, stockPortfolio, grossIncome, monthlyRent, rentGrowth,
       filingStatus, mortgageRate, marginRate, helocRate, cashOutRefiRate,
       investmentReturn, dividendYield, homeAppreciation, loanTerm, minBuffer,
-      manualDpPct, manualMarginPct, manualHelocPct, activeTab]);
+      manualDpPct, manualMarginPct, manualHelocPct, activeTab, selectedLocation]);
 
   // Default values for comparison (only include non-default in URL)
   const defaults = useMemo(() => ({
@@ -502,7 +532,7 @@ export default function HomePurchaseOptimizer() {
     filingStatus: 'married', mortgageRate: 6.5, marginRate: 6.5,
     helocRate: 8.5, cashOutRefiRate: 6.75, investmentReturn: 8,
     dividendYield: 2, homeAppreciation: 5, loanTerm: 30, minBuffer: 0,
-    manualDpPct: 30, manualMarginPct: 0, manualHelocPct: 0, activeTab: 'optimize'
+    manualDpPct: 30, manualMarginPct: 0, manualHelocPct: 0, activeTab: 'optimize', location: 'sf'
   }), []);
 
   // Update URL when state changes (debounced)
@@ -553,10 +583,10 @@ export default function HomePurchaseOptimizer() {
 
   const toggleInfo = (id) => setOpenInfoBoxes(p => ({ ...p, [id]: !p[id] }));
   
-  const stateTax = useMemo(() => calcCAStateTax(grossIncome, filingStatus), [grossIncome, filingStatus]);
+  const stateTax = useMemo(() => loc.calcStateTax(grossIncome, filingStatus), [grossIncome, filingStatus, selectedLocation]);
   const fedRate = useMemo(() => getFedRate(grossIncome, filingStatus), [grossIncome, filingStatus]);
-  const caRate = useMemo(() => getCARate(grossIncome, filingStatus), [grossIncome, filingStatus]);
-  const combRate = fedRate + caRate;
+  const stateRate = useMemo(() => loc.getStateRate(grossIncome, filingStatus), [grossIncome, filingStatus, selectedLocation]);
+  const combRate = fedRate + stateRate;
   const stdDeduction = filingStatus === 'married' ? 29200 : 14600;
   
   const handleOptimize = useCallback(() => {
@@ -564,11 +594,11 @@ export default function HomePurchaseOptimizer() {
       homePrice, totalSavings, stockPortfolio, mortgageRate: mortgageRate/100, cashOutRefiRate: cashOutRefiRate/100, loanTerm,
       appreciationRate: homeAppreciation/100, investmentReturn: investmentReturn/100,
       dividendYield: dividendYield/100, monthlyRent, rentGrowthRate: rentGrowth/100, marginRate: marginRate/100, helocRate: helocRate/100,
-      fedRate, caRate, stateTax, stdDeduction, minBuffer, filingStatus, grossIncome
+      fedRate, stateRate, stateTax, stdDeduction, minBuffer, filingStatus, grossIncome, loc
     });
     setOptimizationResult(result);
     setActiveTab('optimize');
-  }, [homePrice, totalSavings, stockPortfolio, mortgageRate, loanTerm, homeAppreciation, investmentReturn, monthlyRent, rentGrowth, marginRate, helocRate, fedRate, caRate, stateTax, stdDeduction, minBuffer, grossIncome, filingStatus]);
+  }, [homePrice, totalSavings, stockPortfolio, mortgageRate, loanTerm, homeAppreciation, investmentReturn, monthlyRent, rentGrowth, marginRate, helocRate, fedRate, stateRate, stateTax, stdDeduction, minBuffer, grossIncome, filingStatus, selectedLocation]);
 
   // Apply a scenario to Manual tab settings and navigate there
   const applyScenarioToManual = useCallback((scenario) => {
@@ -610,13 +640,14 @@ export default function HomePurchaseOptimizer() {
       marginRate: marginRate / 100,
       helocRate: helocRate / 100,
       fedRate,
-      caRate,
+      stateRate,
       stateTax,
       stdDeduction,
       filingStatus,
-      grossIncome
+      grossIncome,
+      loc
     });
-  }, [homePrice, manualDpPct, manualMarginPct, manualHelocPct, stockPortfolio, mortgageRate, loanTerm, homeAppreciation, investmentReturn, dividendYield, monthlyRent, rentGrowth, marginRate, helocRate, fedRate, caRate, stateTax, stdDeduction, filingStatus, grossIncome]);
+  }, [homePrice, manualDpPct, manualMarginPct, manualHelocPct, stockPortfolio, mortgageRate, loanTerm, homeAppreciation, investmentReturn, dividendYield, monthlyRent, rentGrowth, marginRate, helocRate, fedRate, stateRate, stateTax, stdDeduction, filingStatus, grossIncome, selectedLocation]);
   
   const manualRemaining = totalSavings - manualScenario.cashDown - manualScenario.txCosts.buy + manualScenario.helocAmount;
   const canManualHELOC = manualScenario.cashDown + (stockPortfolio * manualMarginPct / 100) >= homePrice;
@@ -629,9 +660,11 @@ export default function HomePurchaseOptimizer() {
     const fica = Math.min(grossIncome, 168600) * 0.062 // Social Security
       + grossIncome * 0.0145                             // Medicare
       + Math.max(0, grossIncome - 200000) * 0.009;       // Additional Medicare
-    const caSdi = grossIncome * 0.011;                    // CA SDI (no cap since 2024)
-    return Math.min(0.55, (stateTax + fedTax + fica + caSdi) / grossIncome);
-  }, [grossIncome, filingStatus, stateTax]);
+    const statePayroll = loc.payrollTaxRate > 0
+      ? (loc.payrollTaxCap ? Math.min(grossIncome, loc.payrollTaxCap) : grossIncome) * loc.payrollTaxRate
+      : 0;
+    return Math.min(0.55, (stateTax + fedTax + fica + statePayroll) / grossIncome);
+  }, [grossIncome, filingStatus, stateTax, selectedLocation]);
 
   const affordability = useMemo(() => calcAffordability({
     grossIncome,
@@ -644,7 +677,8 @@ export default function HomePurchaseOptimizer() {
     monthlyRent,
     effectiveTaxRate: estEffectiveTaxRate,
     targetTakeHomePct: affTargetComfort,
-  }), [grossIncome, totalSavings, mortgageRate, loanTerm, minBuffer, affMonthlyHOA, affMonthlyOtherDebt, monthlyRent, estEffectiveTaxRate, affTargetComfort]);
+    loc,
+  }), [grossIncome, totalSavings, mortgageRate, loanTerm, minBuffer, affMonthlyHOA, affMonthlyOtherDebt, monthlyRent, estEffectiveTaxRate, affTargetComfort, selectedLocation]);
 
   const s = {
     container: { fontFamily: "'IBM Plex Sans', -apple-system, sans-serif", background: 'linear-gradient(135deg, #0c1220 0%, #1a1a2e 50%, #16213e 100%)', minHeight: '100vh', color: '#e0e0e0', padding: '24px', overflowX: 'hidden', boxSizing: 'border-box' },
@@ -984,7 +1018,7 @@ export default function HomePurchaseOptimizer() {
         >
           <p><strong>Owner wealth:</strong> Home equity (home value minus remaining mortgage) minus estimated selling costs (realtor fees, transfer taxes, closing costs ~5-6%).</p>
           <p style={{marginTop: '10px'}}><strong>Renter wealth:</strong> What you'd have if you invested the down payment + closing costs instead of buying. Compounds at {investmentReturn}% annually{opt.breakEvenSensitivity?.subjectToNIIT ? ', reduced by 3.8% NIIT' : ''}. If renting is cheaper than owning each year, those savings are added to the portfolio.</p>
-          <p style={{marginTop: '10px'}}><strong>Key assumptions:</strong> {homeAppreciation}% home appreciation, {investmentReturn}% investment returns, 3% annual rent increases, Prop 13 property tax growth cap.</p>
+          <p style={{marginTop: '10px'}}><strong>Key assumptions:</strong> {homeAppreciation}% home appreciation, {investmentReturn}% investment returns, 3% annual rent increases{loc.hasProp13 ? ', Prop 13 property tax growth cap' : ''}.</p>
         </InfoBox>
       </div>
     );
@@ -1112,7 +1146,7 @@ export default function HomePurchaseOptimizer() {
               </div>
             </div>
 
-            {/* Semi-Annual: Property Tax (SF pays twice per year) */}
+            {/* Semi-Annual: Property Tax */}
             <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '8px', padding: '12px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -1270,7 +1304,7 @@ export default function HomePurchaseOptimizer() {
         // Be specific about mortgage deduction limits
         if (opt.shouldItemize) {
           if (opt.acquisitionDebt > 750000) {
-            reasons.push(`Mortgage interest deduction: Only ${fmt$(750000)} of your ${fmt$(opt.acquisitionDebt)} mortgage is federally deductible (CA allows ${fmt$(Math.min(opt.acquisitionDebt, 1000000))})`);
+            reasons.push(`Mortgage interest deduction: Only ${fmt$(750000)} of your ${fmt$(opt.acquisitionDebt)} mortgage is federally deductible${loc.stateMortgageDeductionLimit > 750000 ? ` (${loc.state} allows ${fmt$(Math.min(opt.acquisitionDebt, loc.stateMortgageDeductionLimit))})` : ''}`);
             deductionNotes.push(`You lose ${fmt$(opt.nonDeductibleMortgageInterest)}/yr in non-deductible interest (federal)`);
           } else {
             reasons.push('Full mortgage interest is deductible (under $750K limit)');
@@ -1746,7 +1780,7 @@ export default function HomePurchaseOptimizer() {
                 <div style={{ fontWeight: '600', color: '#fff', marginBottom: '4px' }}>Get {fmt$(opt.mortgageLoan)} mortgage at {mortgageRate}%</div>
                 <div style={{ fontSize: '0.85rem', color: '#8b8ba7' }}>
                   Effective rate: {fmtPct(opt.mortgageEffectiveRate)}. 
-                  {opt.mortgageLoan > 750000 ? ` Only $750K qualifies for deduction.` : ''}
+                  {opt.mortgageLoan > 750000 ? ` Only $750K qualifies for federal deduction.` : ''}
                 </div>
               </div>
             </div>
@@ -1950,13 +1984,15 @@ export default function HomePurchaseOptimizer() {
           <p style={{marginTop: '10px'}}><strong>Carryforward:</strong> Excess investment interest expense can be carried forward to future years indefinitely.</p>
         </InfoBox>
 
-        <InfoBox title="$750K Federal vs $1M California Limit" isOpen={openInfoBoxes['mortgageLimitInfo']} onToggle={() => toggleInfo('mortgageLimitInfo')}
-          recommendation={{ type: 'yes', text: 'California provides extra deduction benefit on mortgages between $750K-$1M.' }}>
+        {loc.stateMortgageDeductionLimit > 750000 && (
+        <InfoBox title={`$750K Federal vs $${(loc.stateMortgageDeductionLimit/1000000).toFixed(0)}M ${loc.state} Limit`} isOpen={openInfoBoxes['mortgageLimitInfo']} onToggle={() => toggleInfo('mortgageLimitInfo')}
+          recommendation={{ type: 'yes', text: `${loc.state} provides extra deduction benefit on mortgages between $750K-$${(loc.stateMortgageDeductionLimit/1000000).toFixed(0)}M.` }}>
           <p><strong>Federal ($750K limit):</strong> Under TCJA (2017), mortgage interest is only deductible on the first $750,000 of acquisition debt for federal taxes. Interest on debt above this is NOT federally deductible.</p>
-          <p style={{marginTop: '10px'}}><strong>California ($1M limit):</strong> California did NOT conform to TCJA. The state still allows mortgage interest deduction on up to $1,000,000 of acquisition debt.</p>
-          <p style={{marginTop: '10px'}}><strong>What this means:</strong> For a $1M+ mortgage, you get federal deduction on the first $750K and CA deduction on the first $1M. The $750K-$1M portion is only deductible for state taxes.</p>
-          <p style={{marginTop: '10px'}}><strong>Example:</strong> $900K mortgage at 6.5% = $58,500/yr interest. Federal deduction: $48,750 (on $750K). CA deduction: $58,500 (full amount). You save an extra {fmtPct(caRate)} on the $9,750 difference = {fmt$(9750 * caRate)}/yr.</p>
+          <p style={{marginTop: '10px'}}><strong>{loc.state} (${fmt$(loc.stateMortgageDeductionLimit)} limit):</strong> {loc.state} did NOT conform to TCJA. The state still allows mortgage interest deduction on up to {fmt$(loc.stateMortgageDeductionLimit)} of acquisition debt.</p>
+          <p style={{marginTop: '10px'}}><strong>What this means:</strong> For a ${fmt$(loc.stateMortgageDeductionLimit)}+ mortgage, you get federal deduction on the first $750K and {loc.state} deduction on the first {fmt$(loc.stateMortgageDeductionLimit)}. The $750K-{fmt$(loc.stateMortgageDeductionLimit)} portion is only deductible for state taxes.</p>
+          <p style={{marginTop: '10px'}}><strong>Example:</strong> $900K mortgage at 6.5% = $58,500/yr interest. Federal deduction: $48,750 (on $750K). {loc.state} deduction: $58,500 (full amount). You save an extra {fmtPct(stateRate)} on the $9,750 difference = {fmt$(9750 * stateRate)}/yr.</p>
         </InfoBox>
+        )}
 
         <div className="hpo-card" style={s.card}>
           <h3 style={{ ...s.section, marginTop: 0 }}>Configure Your Scenario</h3>
@@ -2062,7 +2098,7 @@ export default function HomePurchaseOptimizer() {
               <div>
                 <h3 style={{ ...s.section, marginTop: 0, marginBottom: '4px' }}>Edit Assumptions</h3>
                 <div style={{ fontSize: '0.8rem', color: assumptionsModified ? '#fbbf24' : '#8b8ba7' }}>
-                  {assumptionsModified ? '⚠️ Custom values active' : 'SF defaults (click to customize)'}
+                  {assumptionsModified ? '⚠️ Custom values active' : `${loc.shortLabel} defaults (click to customize)`}
                 </div>
               </div>
             </div>
@@ -2089,7 +2125,7 @@ export default function HomePurchaseOptimizer() {
                     gap: '6px'
                   }}
                 >
-                  🔄 Reset to SF Defaults
+                  🔄 Reset to {loc.shortLabel} Defaults
                 </button>
               )}
               
@@ -2098,7 +2134,7 @@ export default function HomePurchaseOptimizer() {
                 <div style={s.inputGroup}>
                   <label style={{ ...s.label, fontSize: '0.75rem' }}>
                     Property Tax Rate (%)
-                    {customAssumptions.propTaxRate !== 1.18 && <span style={{ color: '#fbbf24' }}> ★</span>}
+                    {customAssumptions.propTaxRate !== +(loc.propTaxRate * 100).toFixed(2) && <span style={{ color: '#fbbf24' }}> ★</span>}
                   </label>
                   <input
                     type="number"
@@ -2107,14 +2143,14 @@ export default function HomePurchaseOptimizer() {
                     value={customAssumptions.propTaxRate}
                     onChange={e => setCustomAssumptions(prev => ({ ...prev, propTaxRate: parseFloat(e.target.value) || 0 }))}
                   />
-                  <div style={{ fontSize: '0.65rem', color: '#8b8ba7', marginTop: '2px' }}>SF default: 1.18%</div>
+                  <div style={{ fontSize: '0.65rem', color: '#8b8ba7', marginTop: '2px' }}>{loc.shortLabel} default: {(loc.propTaxRate * 100).toFixed(2)}%</div>
                 </div>
 
                 {/* Transfer Tax */}
                 <div style={s.inputGroup}>
                   <label style={{ ...s.label, fontSize: '0.75rem' }}>
                     Transfer Tax (%)
-                    {customAssumptions.transferTax !== 0.68 && <span style={{ color: '#fbbf24' }}> ★</span>}
+                    {customAssumptions.transferTax !== +(loc.transferTax * 100).toFixed(2) && <span style={{ color: '#fbbf24' }}> ★</span>}
                   </label>
                   <input
                     type="number"
@@ -2123,14 +2159,14 @@ export default function HomePurchaseOptimizer() {
                     value={customAssumptions.transferTax}
                     onChange={e => setCustomAssumptions(prev => ({ ...prev, transferTax: parseFloat(e.target.value) || 0 }))}
                   />
-                  <div style={{ fontSize: '0.65rem', color: '#8b8ba7', marginTop: '2px' }}>SF default: 0.68%</div>
+                  <div style={{ fontSize: '0.65rem', color: '#8b8ba7', marginTop: '2px' }}>{loc.shortLabel} default: {(loc.transferTax * 100).toFixed(2)}%</div>
                 </div>
 
                 {/* Parcel Tax */}
                 <div style={s.inputGroup}>
                   <label style={{ ...s.label, fontSize: '0.75rem' }}>
                     Annual Parcel Tax ($)
-                    {customAssumptions.parcelTax !== 350 && <span style={{ color: '#fbbf24' }}> ★</span>}
+                    {customAssumptions.parcelTax !== loc.parcelTax && <span style={{ color: '#fbbf24' }}> ★</span>}
                   </label>
                   <input
                     type="number"
@@ -2139,14 +2175,14 @@ export default function HomePurchaseOptimizer() {
                     value={customAssumptions.parcelTax}
                     onChange={e => setCustomAssumptions(prev => ({ ...prev, parcelTax: parseFloat(e.target.value) || 0 }))}
                   />
-                  <div style={{ fontSize: '0.65rem', color: '#8b8ba7', marginTop: '2px' }}>SF default: $350</div>
+                  <div style={{ fontSize: '0.65rem', color: '#8b8ba7', marginTop: '2px' }}>{loc.shortLabel} default: ${loc.parcelTax}</div>
                 </div>
 
                 {/* Realtor Commission */}
                 <div style={s.inputGroup}>
                   <label style={{ ...s.label, fontSize: '0.75rem' }}>
                     Realtor Commission (%)
-                    {customAssumptions.realtorComm !== 5 && <span style={{ color: '#fbbf24' }}> ★</span>}
+                    {customAssumptions.realtorComm !== +(loc.realtorComm * 100).toFixed(0) && <span style={{ color: '#fbbf24' }}> ★</span>}
                   </label>
                   <input
                     type="number"
@@ -2162,7 +2198,7 @@ export default function HomePurchaseOptimizer() {
                 <div style={s.inputGroup}>
                   <label style={{ ...s.label, fontSize: '0.75rem' }}>
                     Buyer Closing Costs (%)
-                    {customAssumptions.closeBuy !== 1.5 && <span style={{ color: '#fbbf24' }}> ★</span>}
+                    {customAssumptions.closeBuy !== +(loc.closeBuy * 100).toFixed(1) && <span style={{ color: '#fbbf24' }}> ★</span>}
                   </label>
                   <input
                     type="number"
@@ -2178,7 +2214,7 @@ export default function HomePurchaseOptimizer() {
                 <div style={s.inputGroup}>
                   <label style={{ ...s.label, fontSize: '0.75rem' }}>
                     Seller Closing Costs (%)
-                    {customAssumptions.closeSell !== 1 && <span style={{ color: '#fbbf24' }}> ★</span>}
+                    {customAssumptions.closeSell !== +(loc.closeSell * 100).toFixed(1) && <span style={{ color: '#fbbf24' }}> ★</span>}
                   </label>
                   <input
                     type="number"
@@ -2194,7 +2230,7 @@ export default function HomePurchaseOptimizer() {
                 <div style={s.inputGroup}>
                   <label style={{ ...s.label, fontSize: '0.75rem' }}>
                     Insurance Rate (%)
-                    {customAssumptions.insuranceRate !== 0.35 && <span style={{ color: '#fbbf24' }}> ★</span>}
+                    {customAssumptions.insuranceRate !== +(loc.insuranceRate * 100).toFixed(2) && <span style={{ color: '#fbbf24' }}> ★</span>}
                   </label>
                   <input
                     type="number"
@@ -2210,7 +2246,7 @@ export default function HomePurchaseOptimizer() {
                 <div style={s.inputGroup}>
                   <label style={{ ...s.label, fontSize: '0.75rem' }}>
                     Maintenance Rate (%)
-                    {customAssumptions.maintenanceRate !== 1 && <span style={{ color: '#fbbf24' }}> ★</span>}
+                    {customAssumptions.maintenanceRate !== +(loc.maintenanceRate * 100).toFixed(0) && <span style={{ color: '#fbbf24' }}> ★</span>}
                   </label>
                   <input
                     type="number"
@@ -2226,7 +2262,7 @@ export default function HomePurchaseOptimizer() {
                 <div style={s.inputGroup}>
                   <label style={{ ...s.label, fontSize: '0.75rem' }}>
                     PMI Rate (%)
-                    {customAssumptions.pmiRate !== 0.5 && <span style={{ color: '#fbbf24' }}> ★</span>}
+                    {customAssumptions.pmiRate !== +(loc.pmiRate * 100).toFixed(1) && <span style={{ color: '#fbbf24' }}> ★</span>}
                   </label>
                   <input
                     type="number"
@@ -2248,8 +2284,8 @@ export default function HomePurchaseOptimizer() {
                 fontSize: '0.8rem',
                 color: '#8b8ba7'
               }}>
-                <strong style={{ color: '#60a5fa' }}>💡 Tip:</strong> These assumptions are specific to San Francisco. 
-                If you're looking at other markets, adjust property tax rates, transfer taxes, etc. accordingly.
+                <strong style={{ color: '#60a5fa' }}>💡 Tip:</strong> These assumptions are specific to {loc.label}.
+                If you're looking at other markets, change the location dropdown or adjust property tax rates, transfer taxes, etc. accordingly.
                 {assumptionsModified && (
                   <div style={{ marginTop: '8px', color: '#fbbf24' }}>
                     ⚠️ Custom assumptions are currently active. Calculations use your modified values.
@@ -2646,6 +2682,7 @@ export default function HomePurchaseOptimizer() {
           </table>
         </div>
         
+        {loc.hasProp13 && (
         <div className="hpo-card" style={s.card}>
           <h3 style={{ ...s.section, marginTop: 0 }}>Prop 13 Savings Over Time</h3>
           <p style={{ color: '#8b8ba7', fontSize: '0.85rem', marginBottom: '16px' }}>
@@ -2663,6 +2700,7 @@ export default function HomePurchaseOptimizer() {
             </ResponsiveContainer>
           </div>
         </div>
+        )}
       </>
     );
   };
@@ -2691,17 +2729,18 @@ export default function HomePurchaseOptimizer() {
         marginRate: marginRate / 100,
         helocRate: helocRate / 100,
         fedRate,
-        caRate,
+        stateRate,
         stateTax,
         stdDeduction,
         filingStatus,
-        grossIncome
+        grossIncome,
+        loc
       });
 
       const remaining = totalSavings - result.cashDown - result.txCosts.buy + result.helocAmount;
       return { ...sc, ...result, remaining };
     });
-  }, [scenarios, homePrice, stockPortfolio, loanTerm, homeAppreciation, investmentReturn, dividendYield, monthlyRent, rentGrowth, marginRate, helocRate, fedRate, caRate, stateTax, stdDeduction, filingStatus, totalSavings, grossIncome]);
+  }, [scenarios, homePrice, stockPortfolio, loanTerm, homeAppreciation, investmentReturn, dividendYield, monthlyRent, rentGrowth, marginRate, helocRate, fedRate, stateRate, stateTax, stdDeduction, filingStatus, totalSavings, grossIncome, selectedLocation]);
 
   const updateScenario = (id, field, value) => {
     setScenarios(prev => prev.map(s => s.id === id ? { ...s, [field]: value } : s));
@@ -2980,13 +3019,13 @@ export default function HomePurchaseOptimizer() {
   };
 
   // Tax breakdown calculations for Tax tab
-  // Display-only bracket data for the Taxes tab table. Actual tax computation uses calcFedTax / calcCAStateTax.
+  // Display-only bracket data for the Taxes tab table. Actual tax computation uses calcFedTax / loc.calcStateTax.
   const taxBreakdown = useMemo(() => {
     const fedTaxBrackets = filingStatus === 'married'
       ? [{min:0,max:23200,r:0.10},{min:23200,max:94300,r:0.12},{min:94300,max:201050,r:0.22},{min:201050,max:383900,r:0.24},{min:383900,max:487450,r:0.32},{min:487450,max:731200,r:0.35},{min:731200,max:Infinity,r:0.37}]
       : [{min:0,max:11600,r:0.10},{min:11600,max:47150,r:0.12},{min:47150,max:100525,r:0.22},{min:100525,max:191950,r:0.24},{min:191950,max:243725,r:0.32},{min:243725,max:609350,r:0.35},{min:609350,max:Infinity,r:0.37}];
 
-    const caTaxBrackets = filingStatus === 'married'
+    const stateTaxBrackets = filingStatus === 'married'
       ? [{min:0,max:20824,r:0.01},{min:20824,max:49368,r:0.02},{min:49368,max:77918,r:0.04},{min:77918,max:108162,r:0.06},{min:108162,max:136700,r:0.08},{min:136700,max:698274,r:0.093},{min:698274,max:837922,r:0.103},{min:837922,max:1396542,r:0.113},{min:1396542,max:Infinity,r:0.123}]
       : [{min:0,max:10412,r:0.01},{min:10412,max:24684,r:0.02},{min:24684,max:38959,r:0.04},{min:38959,max:54081,r:0.06},{min:54081,max:68350,r:0.08},{min:68350,max:349137,r:0.093},{min:349137,max:418961,r:0.103},{min:418961,max:698271,r:0.113},{min:698271,max:Infinity,r:0.123}];
 
@@ -2994,61 +3033,61 @@ export default function HomePurchaseOptimizer() {
     const hasMentalHealthTax = grossIncome > mentalHealthThreshold;
 
     // Property tax estimate
-    const annualPropTax = homePrice * SF.propTaxRate + SF.parcelTax;
+    const annualPropTax = homePrice * loc.propTaxRate + loc.parcelTax;
 
     // SALT calculations
     const totalSALT = stateTax + annualPropTax;
     const federalSALTDeduction = Math.min(totalSALT, 10000);
     const saltLost = Math.max(0, totalSALT - 10000);
-    const caSALTDeduction = totalSALT; // CA has no cap
+    const stateSALTDeduction = totalSALT; // State has no cap
 
     // Mortgage scenarios for comparison
     const mortgageAmount = homePrice * 0.8; // Assume 20% down
     const annualMortgageInterest = mortgageAmount * (mortgageRate / 100);
     const fedDeductibleMortgageInt = Math.min(mortgageAmount, 750000) * (mortgageRate / 100);
-    const caDeductibleMortgageInt = Math.min(mortgageAmount, 1000000) * (mortgageRate / 100);
+    const stateDeductibleMortgageInt = Math.min(mortgageAmount, loc.stateMortgageDeductionLimit) * (mortgageRate / 100);
     const mortgageIntLostFederal = annualMortgageInterest - fedDeductibleMortgageInt;
 
     // Itemization analysis
     const fedItemized = fedDeductibleMortgageInt + federalSALTDeduction;
-    // For CA: you CANNOT deduct CA state tax from CA state taxes - only mortgage interest + property tax
-    const caItemized = caDeductibleMortgageInt + annualPropTax; // Only property tax, not state income tax
+    // For state: you CANNOT deduct state tax from state taxes - only mortgage interest + property tax
+    const stateItemized = stateDeductibleMortgageInt + annualPropTax; // Only property tax, not state income tax
     const shouldItemizeFed = fedItemized > stdDeduction;
-    const caStd = filingStatus === 'married' ? 10726 : 5363;
-    const shouldItemizeCA = caItemized > caStd;
+    const stateStd = loc.stateStdDeduction(filingStatus);
+    const shouldItemizeState = stateItemized > stateStd;
 
     // Tax savings from homeownership
     const fedTaxSavings = shouldItemizeFed ? (fedItemized - stdDeduction) * fedRate : 0;
-    const caTaxSavings = shouldItemizeCA ? (caItemized - caStd) * caRate : 0;
-    const totalTaxSavings = fedTaxSavings + caTaxSavings;
+    const stateTaxSavings = shouldItemizeState ? (stateItemized - stateStd) * stateRate : 0;
+    const totalTaxSavings = fedTaxSavings + stateTaxSavings;
 
     return {
       fedTaxBrackets,
-      caTaxBrackets,
+      stateTaxBrackets,
       fedRate,
-      caRate,
+      stateRate,
       hasMentalHealthTax,
       mentalHealthThreshold,
       annualPropTax,
       totalSALT,
       federalSALTDeduction,
       saltLost,
-      caSALTDeduction,
+      stateSALTDeduction,
       mortgageAmount,
       annualMortgageInterest,
       fedDeductibleMortgageInt,
-      caDeductibleMortgageInt,
+      stateDeductibleMortgageInt,
       mortgageIntLostFederal,
       fedItemized,
-      caItemized,
+      stateItemized,
       shouldItemizeFed,
-      shouldItemizeCA,
-      caStd,
+      shouldItemizeState,
+      stateStd,
       fedTaxSavings,
-      caTaxSavings,
+      stateTaxSavings,
       totalTaxSavings
     };
-  }, [grossIncome, filingStatus, homePrice, mortgageRate, stateTax, fedRate, caRate, stdDeduction]);
+  }, [grossIncome, filingStatus, homePrice, mortgageRate, stateTax, fedRate, stateRate, stdDeduction, selectedLocation]);
 
   const renderTax = () => {
     const tb = taxBreakdown;
@@ -3065,10 +3104,10 @@ export default function HomePurchaseOptimizer() {
               <div style={{ fontSize: '0.8rem', color: '#8b8ba7', marginTop: '4px' }}>Top bracket for {fmt$(grossIncome)}</div>
             </div>
             <div style={{ background: 'rgba(234,179,8,0.1)', borderRadius: '12px', padding: '20px', textAlign: 'center', border: '1px solid rgba(234,179,8,0.3)' }}>
-              <div style={{ fontSize: '0.75rem', color: '#eab308', textTransform: 'uppercase', marginBottom: '8px' }}>California</div>
-              <div className="hpo-tax-rate-val" style={{ fontSize: '2rem', fontWeight: '700', color: '#fff' }}>{fmtPct(caRate)}</div>
+              <div style={{ fontSize: '0.75rem', color: '#eab308', textTransform: 'uppercase', marginBottom: '8px' }}>{loc.state}</div>
+              <div className="hpo-tax-rate-val" style={{ fontSize: '2rem', fontWeight: '700', color: '#fff' }}>{fmtPct(stateRate)}</div>
               <div style={{ fontSize: '0.8rem', color: '#8b8ba7', marginTop: '4px' }}>
-                {tb.hasMentalHealthTax ? 'Includes 1% Mental Health Tax' : `Top bracket for ${fmt$(grossIncome)}`}
+                {!loc.hasStateIncomeTax ? 'No state income tax' : tb.hasMentalHealthTax ? 'Includes 1% Mental Health Tax' : `Top bracket for ${fmt$(grossIncome)}`}
               </div>
             </div>
             <div style={{ background: 'linear-gradient(135deg, rgba(249,115,22,0.15), rgba(234,179,8,0.1))', borderRadius: '12px', padding: '20px', textAlign: 'center', border: '2px solid rgba(249,115,22,0.4)' }}>
@@ -3078,7 +3117,7 @@ export default function HomePurchaseOptimizer() {
             </div>
           </div>
 
-          {tb.hasMentalHealthTax && (
+          {tb.hasMentalHealthTax && loc.state === 'CA' && (
             <div style={{ background: 'rgba(234,179,8,0.1)', border: '1px solid rgba(234,179,8,0.3)', borderRadius: '8px', padding: '12px', fontSize: '0.85rem', color: '#eab308', marginBottom: '12px' }}>
               <strong>CA Mental Health Services Tax:</strong> You pay an additional 1% on income over {fmt$(tb.mentalHealthThreshold)} (same for all filing statuses).
             </div>
@@ -3105,7 +3144,7 @@ export default function HomePurchaseOptimizer() {
           <div className="hpo-two-col" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
             <div>
               <div style={{ fontSize: '0.85rem', color: '#8b8ba7', marginBottom: '12px' }}>Your SALT Components</div>
-              <div style={s.costLine}><span>CA State Income Tax:</span><span>{fmt$(stateTax)}</span></div>
+              <div style={s.costLine}><span>{loc.state} State Income Tax:</span><span>{fmt$(stateTax)}</span></div>
               <div style={s.costLine}><span>Property Tax (estimated):</span><span>{fmt$(tb.annualPropTax)}</span></div>
               <div style={{ ...s.costLine, fontWeight: '600', borderTop: '2px solid rgba(255,255,255,0.2)', paddingTop: '12px', marginTop: '8px' }}>
                 <span>Total SALT:</span><span>{fmt$(tb.totalSALT)}</span>
@@ -3122,8 +3161,8 @@ export default function HomePurchaseOptimizer() {
                 <span style={{ color: '#f87171' }}>{fmt$(tb.saltLost)}</span>
               </div>
               <div style={s.costLine}>
-                <span style={{ color: '#4ade80' }}>California (no cap):</span>
-                <span style={{ color: '#4ade80' }}>{fmt$(tb.caSALTDeduction)}</span>
+                <span style={{ color: '#4ade80' }}>{loc.state} (no cap):</span>
+                <span style={{ color: '#4ade80' }}>{fmt$(tb.stateSALTDeduction)}</span>
               </div>
             </div>
           </div>
@@ -3147,10 +3186,12 @@ export default function HomePurchaseOptimizer() {
               )}
             </div>
             <div style={{ background: 'rgba(74,222,128,0.1)', borderRadius: '12px', padding: '20px', border: '1px solid rgba(74,222,128,0.3)' }}>
-              <div style={{ fontSize: '0.85rem', color: '#4ade80', fontWeight: '600', marginBottom: '12px' }}>California Rules ($1M Limit)</div>
+              <div style={{ fontSize: '0.85rem', color: '#4ade80', fontWeight: '600', marginBottom: '12px' }}>{loc.state} Rules ({loc.stateMortgageDeductionLimit > 750000 ? `$${(loc.stateMortgageDeductionLimit/1000).toFixed(0)}K Limit` : '$750K Limit'})</div>
               <div style={s.costLine}><span>Annual Interest:</span><span>{fmt$(tb.annualMortgageInterest)}</span></div>
-              <div style={s.costLine}><span style={{ color: '#4ade80' }}>Deductible:</span><span style={{ color: '#4ade80' }}>{fmt$(tb.caDeductibleMortgageInt)}</span></div>
-              <div style={{ fontSize: '0.8rem', color: '#8b8ba7', marginTop: '8px' }}>CA did not conform to TCJA</div>
+              <div style={s.costLine}><span style={{ color: '#4ade80' }}>Deductible:</span><span style={{ color: '#4ade80' }}>{fmt$(tb.stateDeductibleMortgageInt)}</span></div>
+              {loc.stateMortgageDeductionLimit > 750000 && (
+                <div style={{ fontSize: '0.8rem', color: '#8b8ba7', marginTop: '8px' }}>{loc.state} did not conform to TCJA</div>
+              )}
             </div>
           </div>
         </div>
@@ -3183,28 +3224,28 @@ export default function HomePurchaseOptimizer() {
               </div>
             </div>
 
-            {/* California Breakdown */}
+            {/* State Breakdown */}
             <div>
-              <div style={{ fontSize: '0.9rem', color: '#eab308', fontWeight: '600', marginBottom: '12px' }}>California</div>
+              <div style={{ fontSize: '0.9rem', color: '#eab308', fontWeight: '600', marginBottom: '12px' }}>{loc.state}</div>
 
               {/* Itemized Components Breakdown */}
               <div style={{ background: 'rgba(234,179,8,0.05)', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
                 <div style={{ fontSize: '0.75rem', color: '#8b8ba7', marginBottom: '8px', textTransform: 'uppercase' }}>Itemized Deduction Breakdown</div>
-                <div style={s.costLine}><span>Mortgage Interest:</span><span>{fmt$(tb.caDeductibleMortgageInt)}</span></div>
+                <div style={s.costLine}><span>Mortgage Interest:</span><span>{fmt$(tb.stateDeductibleMortgageInt)}</span></div>
                 <div style={s.costLine}><span>Property Tax (no cap):</span><span>{fmt$(tb.annualPropTax)}</span></div>
-                <div style={{ fontSize: '0.7rem', color: '#8b8ba7', marginTop: '4px', fontStyle: 'italic' }}>Note: CA state tax not deductible from CA taxes</div>
+                {loc.hasStateIncomeTax && <div style={{ fontSize: '0.7rem', color: '#8b8ba7', marginTop: '4px', fontStyle: 'italic' }}>Note: {loc.state} state tax not deductible from {loc.state} taxes</div>}
                 <div style={{ ...s.costLine, fontWeight: '600', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '8px', marginTop: '6px' }}>
-                  <span>Total Itemized:</span><span style={{ color: '#eab308' }}>{fmt$(tb.caItemized)}</span>
+                  <span>Total Itemized:</span><span style={{ color: '#eab308' }}>{fmt$(tb.stateItemized)}</span>
                 </div>
               </div>
 
-              <div style={s.costLine}><span>vs Standard Deduction:</span><span>{fmt$(tb.caStd)}</span></div>
+              <div style={s.costLine}><span>vs Standard Deduction:</span><span>{fmt$(tb.stateStd)}</span></div>
               <div style={{ marginTop: '12px', padding: '10px', borderRadius: '8px', textAlign: 'center',
-                background: tb.shouldItemizeCA ? 'rgba(74,222,128,0.15)' : 'rgba(248,113,113,0.15)',
-                border: tb.shouldItemizeCA ? '1px solid rgba(74,222,128,0.4)' : '1px solid rgba(248,113,113,0.4)',
-                color: tb.shouldItemizeCA ? '#4ade80' : '#f87171'
+                background: tb.shouldItemizeState ? 'rgba(74,222,128,0.15)' : 'rgba(248,113,113,0.15)',
+                border: tb.shouldItemizeState ? '1px solid rgba(74,222,128,0.4)' : '1px solid rgba(248,113,113,0.4)',
+                color: tb.shouldItemizeState ? '#4ade80' : '#f87171'
               }}>
-                {tb.shouldItemizeCA ? '✓ Itemize (+' + fmt$(tb.caItemized - tb.caStd) + ' extra deductions)' : '✗ Take Standard Deduction'}
+                {tb.shouldItemizeState ? '✓ Itemize (+' + fmt$(tb.stateItemized - tb.stateStd) + ' extra deductions)' : '✗ Take Standard Deduction'}
               </div>
             </div>
           </div>
@@ -3221,8 +3262,8 @@ export default function HomePurchaseOptimizer() {
               <div style={{ fontSize: '1.5rem', fontWeight: '700', color: '#4ade80' }}>{fmt$(tb.fedTaxSavings)}</div>
             </div>
             <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: '0.75rem', color: '#8b8ba7', marginBottom: '4px' }}>California Savings</div>
-              <div style={{ fontSize: '1.5rem', fontWeight: '700', color: '#4ade80' }}>{fmt$(tb.caTaxSavings)}</div>
+              <div style={{ fontSize: '0.75rem', color: '#8b8ba7', marginBottom: '4px' }}>{loc.state} Savings</div>
+              <div style={{ fontSize: '1.5rem', fontWeight: '700', color: '#4ade80' }}>{fmt$(tb.stateTaxSavings)}</div>
             </div>
             <div style={{ textAlign: 'center', background: 'rgba(0,0,0,0.2)', borderRadius: '12px', padding: '12px' }}>
               <div style={{ fontSize: '0.75rem', color: '#8b8ba7', marginBottom: '4px' }}>Total Annual Savings</div>
@@ -3254,24 +3295,24 @@ export default function HomePurchaseOptimizer() {
               )}
             </div>
 
-            {/* California Calculation */}
+            {/* State Calculation */}
             <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '12px', padding: '16px' }}>
-              <div style={{ fontSize: '0.75rem', color: '#eab308', textTransform: 'uppercase', marginBottom: '12px', fontWeight: '600' }}>California Savings Breakdown</div>
-              {tb.shouldItemizeCA ? (
+              <div style={{ fontSize: '0.75rem', color: '#eab308', textTransform: 'uppercase', marginBottom: '12px', fontWeight: '600' }}>{loc.state} Savings Breakdown</div>
+              {tb.shouldItemizeState ? (
                 <>
-                  <div style={{ ...s.costLine, fontSize: '0.85rem' }}><span>Itemized total:</span><span>{fmt$(tb.caItemized)}</span></div>
-                  <div style={{ ...s.costLine, fontSize: '0.85rem', color: '#f87171' }}><span>Minus standard deduction:</span><span>-{fmt$(tb.caStd)}</span></div>
+                  <div style={{ ...s.costLine, fontSize: '0.85rem' }}><span>Itemized total:</span><span>{fmt$(tb.stateItemized)}</span></div>
+                  <div style={{ ...s.costLine, fontSize: '0.85rem', color: '#f87171' }}><span>Minus standard deduction:</span><span>-{fmt$(tb.stateStd)}</span></div>
                   <div style={{ ...s.costLine, fontSize: '0.85rem', fontWeight: '600', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '8px', marginTop: '6px' }}>
-                    <span>Extra deductions:</span><span>{fmt$(Math.max(0, tb.caItemized - tb.caStd))}</span>
+                    <span>Extra deductions:</span><span>{fmt$(Math.max(0, tb.stateItemized - tb.stateStd))}</span>
                   </div>
-                  <div style={{ ...s.costLine, fontSize: '0.85rem', color: '#fb923c' }}><span>Times marginal rate:</span><span>× {fmtPct(tb.caRate)}</span></div>
+                  <div style={{ ...s.costLine, fontSize: '0.85rem', color: '#fb923c' }}><span>Times marginal rate:</span><span>× {fmtPct(tb.stateRate)}</span></div>
                   <div style={{ ...s.costLine, fontSize: '0.95rem', fontWeight: '700', color: '#4ade80', borderTop: '1px solid rgba(74,222,128,0.3)', paddingTop: '8px', marginTop: '6px' }}>
-                    <span>California tax savings:</span><span>{fmt$(tb.caTaxSavings)}</span>
+                    <span>{loc.state} tax savings:</span><span>{fmt$(tb.stateTaxSavings)}</span>
                   </div>
                 </>
               ) : (
                 <div style={{ fontSize: '0.85rem', color: '#8b8ba7', fontStyle: 'italic' }}>
-                  Standard deduction ({fmt$(tb.caStd)}) exceeds itemized ({fmt$(tb.caItemized)}). No additional CA savings from homeownership deductions.
+                  Standard deduction ({fmt$(tb.stateStd)}) exceeds itemized ({fmt$(tb.stateItemized)}). No additional {loc.state} savings from homeownership deductions.
                 </div>
               )}
             </div>
@@ -3357,11 +3398,11 @@ export default function HomePurchaseOptimizer() {
           <table style={s.table}>
             <tbody>
               <tr><td style={s.td}>Federal Standard Deduction ({filingStatus})</td><td style={{ ...s.td, textAlign: 'right' }}>{fmt$(stdDeduction)}</td></tr>
-              <tr><td style={s.td}>California Standard Deduction ({filingStatus})</td><td style={{ ...s.td, textAlign: 'right' }}>{fmt$(tb.caStd)}</td></tr>
+              {loc.hasStateIncomeTax && <tr><td style={s.td}>{loc.state} Standard Deduction ({filingStatus})</td><td style={{ ...s.td, textAlign: 'right' }}>{fmt$(tb.stateStd)}</td></tr>}
               <tr><td style={s.td}>SALT Cap (Federal)</td><td style={{ ...s.td, textAlign: 'right' }}>{fmt$(10000)}</td></tr>
               <tr><td style={s.td}>Mortgage Interest Limit (Federal)</td><td style={{ ...s.td, textAlign: 'right' }}>{fmt$(750000)}</td></tr>
-              <tr><td style={s.td}>Mortgage Interest Limit (California)</td><td style={{ ...s.td, textAlign: 'right' }}>{fmt$(1000000)}</td></tr>
-              <tr><td style={s.td}>CA Mental Health Tax Threshold (all filers)</td><td style={{ ...s.td, textAlign: 'right' }}>{fmt$(tb.mentalHealthThreshold)}</td></tr>
+              {loc.hasStateIncomeTax && <tr><td style={s.td}>Mortgage Interest Limit ({loc.state})</td><td style={{ ...s.td, textAlign: 'right' }}>{fmt$(loc.stateMortgageDeductionLimit)}</td></tr>}
+              {loc.state === 'CA' && <tr><td style={s.td}>CA Mental Health Tax Threshold (all filers)</td><td style={{ ...s.td, textAlign: 'right' }}>{fmt$(tb.mentalHealthThreshold)}</td></tr>}
               <tr style={{ background: 'rgba(249,115,22,0.1)' }}><td style={{ ...s.td, fontWeight: '600' }}>Your Combined Marginal Rate</td><td style={{ ...s.td, textAlign: 'right', fontWeight: '600', color: '#f97316' }}>{fmtPct(combRate)}</td></tr>
             </tbody>
           </table>
@@ -3395,7 +3436,7 @@ export default function HomePurchaseOptimizer() {
         mortgageRate: mortgageRate / 100, loanTerm, appreciationRate: whatIfAppreciation / 100,
         investmentReturn: investmentReturn / 100, dividendYield: dividendYield / 100,
         monthlyRent, rentGrowthRate: rentGrowth / 100, marginRate: marginRate / 100,
-        helocRate: helocRate / 100, fedRate, caRate, stateTax, stdDeduction, filingStatus, grossIncome
+        helocRate: helocRate / 100, fedRate, stateRate, stateTax, stdDeduction, filingStatus, grossIncome, loc
       });
       return scenario.breakEvenYear;
     })();
@@ -3406,7 +3447,7 @@ export default function HomePurchaseOptimizer() {
         mortgageRate: mortgageRate / 100, loanTerm, appreciationRate: whatIfAppreciation / 100,
         investmentReturn: investmentReturn / 100, dividendYield: dividendYield / 100,
         monthlyRent, rentGrowthRate: rentGrowth / 100, marginRate: marginRate / 100,
-        helocRate: helocRate / 100, fedRate, caRate, stateTax, stdDeduction, filingStatus, grossIncome
+        helocRate: helocRate / 100, fedRate, stateRate, stateTax, stdDeduction, filingStatus, grossIncome, loc
       });
       return scenario.yearlyAnalysis?.[9]?.advantage || 0;
     })();
@@ -3435,11 +3476,12 @@ export default function HomePurchaseOptimizer() {
         marginRate: marginRate / 100,
         helocRate: helocRate / 100,
         fedRate,
-        caRate,
+        stateRate,
         stateTax,
         stdDeduction,
         filingStatus,
-        grossIncome
+        grossIncome,
+        loc
       });
       return scenario.breakEvenYear === 'Never' ? 31 : scenario.breakEvenYear;
     };
@@ -3498,7 +3540,7 @@ export default function HomePurchaseOptimizer() {
             marginRate: marginRate / 100,
             helocRate: helocRate / 100,
             fedRate,
-            caRate,
+            stateRate,
             stateTax,
             stdDeduction,
             filingStatus,
@@ -3523,7 +3565,7 @@ export default function HomePurchaseOptimizer() {
             marginRate: marginRate / 100,
             helocRate: helocRate / 100,
             fedRate,
-            caRate,
+            stateRate,
             stateTax,
             stdDeduction,
             filingStatus,
@@ -3555,7 +3597,7 @@ export default function HomePurchaseOptimizer() {
             marginRate: marginRate / 100,
             helocRate: helocRate / 100,
             fedRate,
-            caRate,
+            stateRate,
             stateTax,
             stdDeduction,
             filingStatus,
@@ -3579,7 +3621,7 @@ export default function HomePurchaseOptimizer() {
             marginRate: marginRate / 100,
             helocRate: helocRate / 100,
             fedRate,
-            caRate,
+            stateRate,
             stateTax,
             stdDeduction,
             filingStatus,
@@ -4275,12 +4317,12 @@ export default function HomePurchaseOptimizer() {
               <strong style={{ color: '#a78bfa' }}>Savings:</strong> Down payment + closing costs cannot exceed your savings minus {fmt$(minBuffer)} buffer.
             </div>
             <div className="hpo-two-col" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 24px', marginTop: '12px' }}>
-              <div>Property Tax: {fmtPct(SF.propTaxRate)} (SF avg)</div>
-              <div>Insurance: 0.35% of home price</div>
-              <div>PMI (private mortgage insurance): 0.50%/yr of loan (if {'<'}20% down)</div>
+              <div>Property Tax: {fmtPct(loc.propTaxRate)} ({loc.shortLabel} avg)</div>
+              <div>Insurance: {fmtPct(loc.insuranceRate)} of home price</div>
+              <div>PMI (private mortgage insurance): {fmtPct(loc.pmiRate)}/yr of loan (if {'<'}20% down)</div>
               <div>Loan: {loanTerm}yr at {mortgageRate}%</div>
               <div>Take-home est: ~{fmtPctWhole((1 - estEffectiveTaxRate) * 100)} of gross</div>
-              <div>Closing: ~{fmtPct(SF.closeBuy)} + transfer tax</div>
+              <div>Closing: ~{fmtPct(loc.closeBuy)} + transfer tax</div>
             </div>
             <p style={{ marginTop: '10px', fontStyle: 'italic', fontSize: '0.8rem' }}>
               Tax benefits from mortgage interest are not included — see the Taxes tab.
@@ -4480,9 +4522,9 @@ export default function HomePurchaseOptimizer() {
       `}</style>
       <header style={s.header}>
         <h1 style={s.title} className="hpo-title">Home Purchase Optimizer</h1>
-        <p style={{ color: '#8b8ba7', fontSize: '1rem' }}>AI-powered strategy optimization for SF homebuyers</p>
+        <p style={{ color: '#8b8ba7', fontSize: '1rem' }}>AI-powered strategy optimization for {loc.label} homebuyers</p>
         <div className="hpo-header-controls" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', marginTop: '12px', flexWrap: 'wrap' }}>
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'rgba(249,115,22,0.15)', border: '1px solid rgba(249,115,22,0.3)', borderRadius: '20px', padding: '6px 14px', fontSize: '0.8rem', color: '#fb923c' }}>🌉 San Francisco Edition</div>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'rgba(249,115,22,0.15)', border: '1px solid rgba(249,115,22,0.3)', borderRadius: '20px', padding: '6px 14px', fontSize: '0.8rem', color: '#fb923c' }}>{loc.emoji} {loc.label} Edition</div>
           <button 
             onClick={copyShareLink}
             style={{ 
@@ -4546,6 +4588,17 @@ export default function HomePurchaseOptimizer() {
       <div style={s.grid} className="hpo-grid">
         <aside className="hpo-panel" style={s.panel}>
           <h3 style={{ ...s.section, marginTop: 0 }}>Your Situation</h3>
+          <div style={s.inputGroup}>
+            <label style={s.label}>Location</label>
+            <div style={{ fontSize: '0.7rem', color: '#8b8ba7', marginTop: '-2px', marginBottom: '4px' }}>
+              Affects property tax, state income tax, transfer tax
+            </div>
+            <select className="hpo-select" style={s.select} value={selectedLocation} onChange={e => setSelectedLocation(e.target.value)}>
+              {Object.values(LOCATIONS).map(l => (
+                <option key={l.key} value={l.key}>{l.label}</option>
+              ))}
+            </select>
+          </div>
           <div style={s.inputGroup}>
             <label style={s.label}>Target Home Price</label>
             <div style={{ fontSize: '0.7rem', color: '#8b8ba7', marginTop: '-2px', marginBottom: '4px' }}>Use "What Can I Buy?" tab if unsure</div>
