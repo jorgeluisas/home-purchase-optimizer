@@ -752,7 +752,7 @@ export default function HomePurchaseOptimizer() {
     badgePurple: { background: 'rgba(167,139,250,0.2)', color: '#a78bfa' },
     chart: { height: '320px', marginTop: '20px' },
     divider: { height: '1px', background: 'rgba(255,255,255,0.08)', margin: '20px 0' },
-    costLine: { display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.05)', fontSize: '0.9rem' },
+    costLine: { display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.05)', fontSize: '0.9rem', gap: '8px', flexWrap: 'wrap' },
     rentCompare: { background: 'rgba(0,0,0,0.3)', borderRadius: '12px', padding: '20px', marginTop: '16px' },
     warning: { background: 'rgba(251,191,36,0.1)', border: '1px solid rgba(251,191,36,0.3)', borderRadius: '8px', padding: '12px', marginBottom: '16px', fontSize: '0.85rem', color: '#fbbf24' },
     error: { background: 'rgba(248,113,113,0.1)', border: '1px solid rgba(248,113,113,0.3)', borderRadius: '8px', padding: '12px', marginBottom: '16px', fontSize: '0.85rem', color: '#f87171' }
@@ -2123,7 +2123,7 @@ export default function HomePurchaseOptimizer() {
               <div style={{ color: '#8b8ba7', fontSize: '0.8rem', marginTop: '4px' }}>Disabled — HELOC and cash-out refi are mutually exclusive</div>
             )}
             {sc.cashOutRefiAmount > 0 && (
-              <div style={{ marginTop: '10px', padding: '12px', background: 'rgba(96,165,250,0.08)', borderRadius: '8px', border: '1px solid rgba(96,165,250,0.2)' }}>
+              <div className="hpo-cashout-explainer" style={{ marginTop: '10px', padding: '12px', background: 'rgba(96,165,250,0.08)', borderRadius: '8px', border: '1px solid rgba(96,165,250,0.2)' }}>
                 <div style={{ color: '#60a5fa', fontSize: '0.85rem', fontWeight: '600', marginBottom: '8px' }}>How Cash-Out Refi Works</div>
                 <div style={{ fontSize: '0.8rem', color: '#c8c8d8', lineHeight: '1.5' }}>
                   Instead of a regular {fmt$(sc.acquisitionDebt)} mortgage, you take a larger loan of {fmt$(sc.totalRefiLoan)} ({fmtPct((sc.totalRefiLoan / homePrice))} LTV).
@@ -2160,8 +2160,12 @@ export default function HomePurchaseOptimizer() {
           <div style={s.metric}><div style={{ ...s.metricVal, color: '#4ade80' }}>{fmtPct(sc.blendedEffectiveRate)}</div><div style={s.metricLbl}>Blended Eff. Rate</div></div>
           <div style={s.metric}><div style={{ ...s.metricVal, color: manualRemaining < minBuffer ? '#f87171' : '#4ade80' }}>{fmt$(manualRemaining)}</div><div style={s.metricLbl}>Cash After Close</div></div>
         </div>
-        <div style={{ fontSize: '0.75rem', color: '#8b8ba7', textAlign: 'center', marginTop: '-8px', marginBottom: '8px' }}>
-          Cash After Close = Savings ({fmt$(totalSavings)}) − Down Payment ({fmt$(sc.cashDown)}) − Closing Costs ({fmt$(sc.txCosts.buy)}){sc.cashOutRefiAmount > 0 ? ` + Cash-Out Proceeds (${fmt$(sc.cashOutRefiAmount)})` : ''}{sc.helocAmount > 0 ? ` + HELOC Proceeds (${fmt$(sc.helocAmount)})` : ''}
+        <div className="hpo-formula-hint" style={{ fontSize: '0.75rem', color: '#8b8ba7', textAlign: 'center', marginTop: '-8px', marginBottom: '8px', lineHeight: '1.6' }}>
+          <span style={{ whiteSpace: 'nowrap' }}>Savings ({fmt$(totalSavings)})</span>{' '}
+          <span style={{ whiteSpace: 'nowrap' }}>− Down ({fmt$(sc.cashDown)})</span>{' '}
+          <span style={{ whiteSpace: 'nowrap' }}>− Closing ({fmt$(sc.txCosts.buy)})</span>
+          {sc.cashOutRefiAmount > 0 && <>{' '}<span style={{ whiteSpace: 'nowrap' }}>+ Cash-Out ({fmt$(sc.cashOutRefiAmount)})</span></>}
+          {sc.helocAmount > 0 && <>{' '}<span style={{ whiteSpace: 'nowrap' }}>+ HELOC ({fmt$(sc.helocAmount)})</span></>}
         </div>
         
         {/* Financing structure */}
@@ -2187,10 +2191,10 @@ export default function HomePurchaseOptimizer() {
           {(sc.marginLoan > 0 || sc.helocAmount > 0 || sc.cashOutRefiAmount > 0) && (
             <div style={{ marginTop: '16px', padding: '14px', background: 'rgba(167,139,250,0.08)', borderRadius: '10px', border: '1px solid rgba(167,139,250,0.2)' }}>
               <div style={{ fontSize: '0.82rem', color: '#a78bfa', fontWeight: '600', marginBottom: '10px' }}>Interest Tracing Summary</div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: '4px 16px', fontSize: '0.82rem' }}>
+              <div className="hpo-tracing-grid" style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: '4px 16px', fontSize: '0.82rem' }}>
                 <div style={{ color: '#8b8ba7', fontWeight: '600', paddingBottom: '4px' }}>Source</div>
-                <div style={{ color: '#8b8ba7', fontWeight: '600', textAlign: 'right', paddingBottom: '4px' }}>Interest/yr</div>
-                <div style={{ color: '#8b8ba7', fontWeight: '600', textAlign: 'right', paddingBottom: '4px' }}>Deductible</div>
+                <div style={{ color: '#8b8ba7', fontWeight: '600', textAlign: 'right', paddingBottom: '4px' }}>Int./yr</div>
+                <div style={{ color: '#8b8ba7', fontWeight: '600', textAlign: 'right', paddingBottom: '4px' }}>Deduct.</div>
                 {sc.marginLoan > 0 && <>
                   <div style={{ color: '#c0c0d0', padding: '3px 0' }}>Margin loan</div>
                   <div style={{ textAlign: 'right', padding: '3px 0' }}>{fmt$(sc.marginInterestAnnual)}</div>
@@ -2229,7 +2233,7 @@ export default function HomePurchaseOptimizer() {
           <h3 style={{ ...s.section, marginTop: 0 }}>Tax Analysis</h3>
 
           {/* Federal Mortgage Interest Deduction */}
-          <div style={{ marginBottom: '20px' }}>
+          <div className="hpo-tax-detail" style={{ marginBottom: '20px' }}>
             <div style={{ fontSize: '0.85rem', fontWeight: '600', color: '#60a5fa', marginBottom: '8px' }}>Federal Mortgage Interest Deduction</div>
             <div style={s.costLine}><span style={{ color: '#8b8ba7' }}>Deductible mortgage interest:</span><span>{fmt$(sc.federalDeductibleMortgageInterest)}</span></div>
             <div style={s.costLine}><span style={{ color: '#8b8ba7' }}>SALT (capped at $10K):</span><span>{fmt$(sc.saltCapped)}</span></div>
@@ -2250,7 +2254,7 @@ export default function HomePurchaseOptimizer() {
 
           {/* State Mortgage Interest Deduction */}
           {loc.hasStateIncomeTax && (
-            <div style={{ marginBottom: '20px' }}>
+            <div className="hpo-tax-detail" style={{ marginBottom: '20px' }}>
               <div style={{ fontSize: '0.85rem', fontWeight: '600', color: '#c084fc', marginBottom: '8px' }}>{loc.stateLabel} Mortgage Interest Deduction</div>
               <div style={s.costLine}><span style={{ color: '#8b8ba7' }}>Deductible mortgage interest:</span><span>{fmt$(sc.stateDeductibleMortgageInterest)}</span></div>
               <div style={s.costLine}><span style={{ color: '#8b8ba7' }}>Property tax:</span><span>{fmt$(sc.propTax)}</span></div>
@@ -2271,7 +2275,7 @@ export default function HomePurchaseOptimizer() {
 
           {/* Interest Tracing Deduction */}
           {sc.investInterestTaxBenefit > 0 && (
-            <div style={{ marginBottom: '20px' }}>
+            <div className="hpo-tax-detail" style={{ marginBottom: '20px' }}>
               <div style={{ fontSize: '0.85rem', fontWeight: '600', color: '#fbbf24', marginBottom: '8px' }}>Interest Tracing (Investment Interest Deduction)</div>
               {sc.deductibleMarginInterest > 0 && (
                 <div style={s.costLine}><span style={{ color: '#8b8ba7' }}>Margin interest deductible:</span><span>{fmt$(sc.deductibleMarginInterest)}/yr</span></div>
@@ -2296,13 +2300,15 @@ export default function HomePurchaseOptimizer() {
           )}
 
           {/* Total */}
-          <div style={{ padding: '12px 16px', background: 'rgba(74,222,128,0.1)', borderRadius: '8px', border: '1px solid rgba(74,222,128,0.2)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div className="hpo-tax-detail" style={{ padding: '12px 16px', background: 'rgba(74,222,128,0.1)', borderRadius: '8px', border: '1px solid rgba(74,222,128,0.2)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '4px' }}>
               <span style={{ fontWeight: '700', fontSize: '1rem' }}>Total Annual Tax Benefit</span>
               <span style={{ fontWeight: '700', fontSize: '1.1rem', color: '#4ade80' }}>{fmt$(sc.totalTaxBenefit)}/yr</span>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', color: '#8b8ba7', marginTop: '4px' }}>
-              <span>Federal mortgage: {fmt$(sc.federalMortgageTaxBenefit)}{loc.hasStateIncomeTax ? ` + ${loc.stateLabel} mortgage: ${fmt$(sc.stateMortgageTaxBenefit)}` : ''}{sc.investInterestTaxBenefit > 0 ? ` + Interest tracing: ${fmt$(sc.investInterestTaxBenefit)}` : ''}</span>
+            <div style={{ fontSize: '0.8rem', color: '#8b8ba7', marginTop: '6px', lineHeight: '1.5' }}>
+              <span style={{ whiteSpace: 'nowrap' }}>Federal mortgage: {fmt$(sc.federalMortgageTaxBenefit)}</span>
+              {loc.hasStateIncomeTax && <>{' · '}<span style={{ whiteSpace: 'nowrap' }}>{loc.stateLabel} mortgage: {fmt$(sc.stateMortgageTaxBenefit)}</span></>}
+              {sc.investInterestTaxBenefit > 0 && <>{' · '}<span style={{ whiteSpace: 'nowrap' }}>Interest tracing: {fmt$(sc.investInterestTaxBenefit)}</span></>}
             </div>
           </div>
         </div>
@@ -2315,16 +2321,16 @@ export default function HomePurchaseOptimizer() {
           </div>
 
           {/* Milestone table */}
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+          <div className="hpo-matrix-wrapper" style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem', minWidth: '520px' }}>
               <thead>
                 <tr style={{ borderBottom: '2px solid rgba(255,255,255,0.15)' }}>
-                  <th style={{ textAlign: 'left', padding: '8px 6px', color: '#8b8ba7', fontWeight: '600' }}>Year</th>
-                  <th style={{ textAlign: 'right', padding: '8px 6px', color: '#8b8ba7', fontWeight: '600' }}>Home Value</th>
-                  <th style={{ textAlign: 'right', padding: '8px 6px', color: '#8b8ba7', fontWeight: '600' }}>Loan Balance</th>
-                  <th style={{ textAlign: 'right', padding: '8px 6px', color: '#8b8ba7', fontWeight: '600' }}>Equity</th>
-                  <th style={{ textAlign: 'right', padding: '8px 6px', color: '#8b8ba7', fontWeight: '600' }}>Principal Paid</th>
-                  <th style={{ textAlign: 'right', padding: '8px 6px', color: '#4ade80', fontWeight: '600' }}>Net Wealth</th>
+                  <th style={{ textAlign: 'left', padding: '8px 6px', color: '#8b8ba7', fontWeight: '600', whiteSpace: 'nowrap' }}>Year</th>
+                  <th style={{ textAlign: 'right', padding: '8px 6px', color: '#8b8ba7', fontWeight: '600', whiteSpace: 'nowrap' }}>Home Value</th>
+                  <th style={{ textAlign: 'right', padding: '8px 6px', color: '#8b8ba7', fontWeight: '600', whiteSpace: 'nowrap' }}>Loan Bal.</th>
+                  <th style={{ textAlign: 'right', padding: '8px 6px', color: '#8b8ba7', fontWeight: '600', whiteSpace: 'nowrap' }}>Equity</th>
+                  <th style={{ textAlign: 'right', padding: '8px 6px', color: '#8b8ba7', fontWeight: '600', whiteSpace: 'nowrap' }}>Princ. Paid</th>
+                  <th style={{ textAlign: 'right', padding: '8px 6px', color: '#4ade80', fontWeight: '600', whiteSpace: 'nowrap' }}>Net Wealth</th>
                 </tr>
               </thead>
               <tbody>
@@ -2332,15 +2338,14 @@ export default function HomePurchaseOptimizer() {
                   const yr = sc.yearlyAnalysis[idx];
                   if (!yr) return null;
                   const cumulativePrincipal = sc.yearlyAnalysis.slice(0, idx + 1).reduce((sum, y) => sum + (y.yearlyPrincipal || 0), 0);
-                  const appreciationGain = yr.homeValue - homePrice;
                   return (
                     <tr key={yr.year} style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-                      <td style={{ padding: '8px 6px', fontWeight: '600' }}>Year {yr.year}</td>
-                      <td style={{ textAlign: 'right', padding: '8px 6px' }}>{fmt$(yr.homeValue)}</td>
-                      <td style={{ textAlign: 'right', padding: '8px 6px', color: '#f87171' }}>{fmt$(yr.loanBalance)}</td>
-                      <td style={{ textAlign: 'right', padding: '8px 6px', color: '#60a5fa' }}>{fmt$(yr.equity)}</td>
-                      <td style={{ textAlign: 'right', padding: '8px 6px' }}>{fmt$(cumulativePrincipal)}</td>
-                      <td style={{ textAlign: 'right', padding: '8px 6px', color: '#4ade80', fontWeight: '600' }}>{fmt$(yr.ownerWealth)}</td>
+                      <td style={{ padding: '8px 6px', fontWeight: '600', whiteSpace: 'nowrap' }}>Yr {yr.year}</td>
+                      <td style={{ textAlign: 'right', padding: '8px 6px', whiteSpace: 'nowrap' }}>{fmt$(yr.homeValue)}</td>
+                      <td style={{ textAlign: 'right', padding: '8px 6px', color: '#f87171', whiteSpace: 'nowrap' }}>{fmt$(yr.loanBalance)}</td>
+                      <td style={{ textAlign: 'right', padding: '8px 6px', color: '#60a5fa', whiteSpace: 'nowrap' }}>{fmt$(yr.equity)}</td>
+                      <td style={{ textAlign: 'right', padding: '8px 6px', whiteSpace: 'nowrap' }}>{fmt$(cumulativePrincipal)}</td>
+                      <td style={{ textAlign: 'right', padding: '8px 6px', color: '#4ade80', fontWeight: '600', whiteSpace: 'nowrap' }}>{fmt$(yr.ownerWealth)}</td>
                     </tr>
                   );
                 })}
@@ -2355,7 +2360,7 @@ export default function HomePurchaseOptimizer() {
             const appreciationGain = yr30.homeValue - homePrice;
             const initialEquity = sc.totalDown;
             return (
-              <div style={{ marginTop: '20px', padding: '16px', background: 'rgba(96,165,250,0.08)', borderRadius: '8px', border: '1px solid rgba(96,165,250,0.2)' }}>
+              <div className="hpo-equity-breakdown" style={{ marginTop: '20px', padding: '16px', background: 'rgba(96,165,250,0.08)', borderRadius: '8px', border: '1px solid rgba(96,165,250,0.2)' }}>
                 <div style={{ fontSize: '0.85rem', fontWeight: '600', color: '#60a5fa', marginBottom: '10px' }}>30-Year Equity Breakdown</div>
                 <div style={s.costLine}><span style={{ color: '#8b8ba7' }}>Initial equity (down payment):</span><span>{fmt$(initialEquity)}</span></div>
                 <div style={s.costLine}><span style={{ color: '#8b8ba7' }}>Principal paid over 30 years:</span><span>{fmt$(totalPrincipalPaid)}</span></div>
@@ -4697,6 +4702,9 @@ export default function HomePurchaseOptimizer() {
           .hpo-affordability-indicator { flex-direction: column !important; text-align: center !important; }
           .hpo-affordability-indicator > div:nth-child(2) { border-left: none !important; padding-left: 0 !important; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 16px; }
 
+          /* Interest tracing grid */
+          .hpo-tracing-grid { gap: 4px 12px !important; font-size: 0.78rem !important; }
+
           /* Charts */
           .hpo-chart { height: 280px !important; }
         }
@@ -4762,6 +4770,13 @@ export default function HomePurchaseOptimizer() {
           /* Chart legend */
           .hpo-chart-legend { font-size: 0.7rem !important; }
 
+          /* Build Your Strategy mobile fixes */
+          .hpo-formula-hint { font-size: 0.7rem !important; text-align: left !important; }
+          .hpo-tracing-grid { gap: 3px 10px !important; font-size: 0.75rem !important; }
+          .hpo-equity-breakdown { font-size: 0.82rem !important; }
+          .hpo-cashout-explainer { font-size: 0.78rem !important; padding: 10px !important; }
+          .hpo-tax-detail { font-size: 0.82rem !important; }
+
           /* Charts */
           .hpo-chart { height: 240px !important; }
         }
@@ -4788,6 +4803,13 @@ export default function HomePurchaseOptimizer() {
           .hpo-chart { height: 200px !important; }
           .hpo-tabs button { padding: 8px 10px !important; font-size: 0.72rem !important; }
           .hpo-cost-table { grid-template-columns: 1fr 80px 80px !important; font-size: 0.72rem !important; gap: 2px 8px !important; }
+
+          /* Build Your Strategy extra-small */
+          .hpo-formula-hint { font-size: 0.65rem !important; }
+          .hpo-tracing-grid { gap: 2px 8px !important; font-size: 0.7rem !important; }
+          .hpo-cashout-explainer { font-size: 0.72rem !important; padding: 8px !important; }
+          .hpo-tax-detail { font-size: 0.75rem !important; }
+          .hpo-equity-breakdown { font-size: 0.75rem !important; padding: 10px !important; }
         }
       `}</style>
       <header style={s.header}>
