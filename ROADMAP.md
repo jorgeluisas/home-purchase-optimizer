@@ -2,7 +2,7 @@
 
 ## Completed
 
-All 5 original UX fixes are done. Additionally, 14 iterations of improvements were applied covering educational value, shareability, usability, visual design, code quality, expert mode depth, and mobile responsiveness. Full mobile responsive overhaul completed as a subsequent enhancement. Multi-state location support and accessible defaults added.
+All 5 original UX fixes are done. Additionally, 14 iterations of improvements were applied covering educational value, shareability, usability, visual design, code quality, expert mode depth, and mobile responsiveness. Full mobile responsive overhaul completed as a subsequent enhancement. Multi-state location support, accessible defaults, and simplified user journey with 2D affordability matrix added.
 
 ### ✅ Fix 1: Progressive Disclosure
 Verdict card + 5 key metrics visible by default. Detailed sections (interest deductibility, non-recoverable costs, top strategies, downside risk) collapsed behind "Show Full Analysis" toggle.
@@ -29,7 +29,10 @@ Force dark input styling with `-webkit-appearance: none !important` and explicit
 Location dropdown (SF default, Florida, NYC, Chicago) in "Your Finances" input section. `LOCATIONS` config object in `calculations.js` with per-location property tax rates, transfer taxes, state income tax functions, Prop 13 flags, mansion tax, payroll tax, and deduction rules. All calc functions (`calcTxCosts`, `calcScenario`, `runOptimization`, `calcAffordability`) parametrized with `loc`. New tax functions: `calcNYStateTax`, `calcNYCLocalTax`, `calcILStateTax`. UI adapts dynamically — Prop 13 section (CA only), state-specific bracket tables, conditional labels. `customAssumptions` auto-syncs when location changes. Location persisted in URL.
 
 ### ✅ Accessible Defaults & Comfort UX
-Lowered defaults from ultra-high-earner to more accessible values ($1M home, $200K savings, $500K portfolio, $500K income, $5K rent, $0 buffer). Comfort target chips moved to standalone card above hero card on "What Can I Buy?" tab. Default comfort set to 30% (Comfortable). 6 tiers: 20% Excellent, 25% Great, 30% Comfortable, 40% Stretched, 50% Heavy, Max DTI Ceiling. Removed 75% (Extreme) tier.
+Lowered defaults from ultra-high-earner to more accessible values ($1M home, $200K savings, $500K portfolio, $500K income, $5K rent, $0 buffer). Default comfort set to 30% (Comfortable). 5 tiers: 20% Excellent, 25% Great, 30% Comfortable, 40% Stretched, 50% Heavy.
+
+### ✅ Simplified User Journey: "What Can I Buy?" First
+Replaced comfort chips, hero card, and spectrum cards with a 2D scenario matrix (6 down payment rows × 5 comfort columns = 30 cells). Each cell shows max home price + monthly PITI. Click a cell to see full detail (monthly breakdown, stacked bar, comfort gauge, context comparisons) and "Find Best Strategy" CTA. Quick-mode inputs simplified to Location, Gross Income, Savings, Filing Status, and Mortgage Rate (Home Price and Monthly Rent hidden, set via matrix CTA). Quick-mode Best Strategy tab redirects to "What Can I Buy?" when no optimization result. New `calcAffordabilityMatrix` function in `calculations.js` with extracted `calcAffordabilityCell` internal helper. `handleOptimize` accepts optional `overrideHomePrice` param to avoid stale-state issue. Down payment options updated to 10/15/20/25/30/40%.
 
 ---
 
@@ -43,7 +46,6 @@ Lowered defaults from ultra-high-earner to more accessible values ($1M home, $20
 ### Medium Priority
 - **Save/export to PDF** — Generate a formatted report from the Best Strategy or Affordability results for sharing with partners, financial advisors, or mortgage brokers.
 - **Guided onboarding flow** — First-time user walkthrough highlighting key inputs and explaining what each tab does.
-- **Extract comfort tier helper** — Comfort level labels/colors are duplicated in 3+ places (renderOptimize, renderAffordability, copyResultsSummary). Could be a shared function.
 - **2025 tax bracket updates** — Current brackets are 2024. Update `calcFedTax`, `calcCAStateTax`, `calcNYStateTax`, `calcNYCLocalTax`, `calcILStateTax`, and FICA thresholds when 2025 brackets are finalized.
 - **Additional locations** — Add more cities/states (e.g., Austin TX, Seattle WA, Boston MA) following the established `LOCATIONS` config pattern.
 

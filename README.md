@@ -8,7 +8,7 @@ A financial planning tool for home buyers in major US markets. Analyzes multiple
 - **Multi-State Support** — Toggle between SF (default), Florida, NYC, and Chicago with location-specific property taxes, state income taxes, transfer taxes, and rules (Prop 13, mansion tax)
 - **Own vs. Rent Analysis** — Side-by-side comparison accounting for appreciation, investment returns, tax benefits, and transaction costs
 - **Tax-Aware Calculations** — Full federal + state tax brackets (CA, NY+NYC, IL, FL), SALT caps, mortgage interest deduction limits, investment interest deduction rules, and NIIT
-- **Affordability Calculator** — Closed-form DTI analysis across multiple down payment levels with comfort targeting (choose what % of take-home to spend on housing)
+- **Affordability Calculator** — 2D scenario matrix (down payment % × comfort %) showing max home price for 30 combinations, with detailed breakdown and direct "Find Best Strategy" CTA
 - **Sensitivity Analysis** — Tornado chart showing variable impact on break-even, 3x3 matrix for appreciation vs. returns, interactive "What If?" slider
 - **Risk Visualization** — Downside scenarios: portfolio crash, home stagnation, rate spike
 - **Scenario Comparison** — Compare up to 4 custom scenarios with detailed breakdowns
@@ -27,8 +27,8 @@ A financial planning tool for home buyers in major US markets. Analyzes multiple
 
 ```
 app/
-├── HomePurchaseOptimizer.jsx   # Main component — all UI rendering (~4,916 lines)
-├── calculations.js             # Financial math & utilities (~722 lines)
+├── HomePurchaseOptimizer.jsx   # Main component — all UI rendering (~4,826 lines)
+├── calculations.js             # Financial math & utilities (~747 lines)
 ├── layout.js                   # App layout (viewport meta, dark background, metadata)
 └── page.js                     # Entry point
 CLAUDE.md                       # AI session context
@@ -61,18 +61,20 @@ Open [http://localhost:3000](http://localhost:3000) to view the optimizer.
 ## Usage
 
 1. **Select your location** — SF (default), Florida, NYC, or Chicago
-2. **Enter your financials** — Home price, savings, stock portfolio, income, current rent
-3. **Click "Run Optimization"** — The tool evaluates all viable strategies
-4. **Review results** — See verdict, break-even year, 10-year advantage, monthly costs, comfort level, and opportunity cost
-5. **Explore tabs** — Switch to Expert mode for deeper analysis (Own vs Rent, Sensitivity, Taxes, Side-by-Side, Build Your Own)
-6. **Share** — Copy a formatted summary or share a link with your scenario encoded in the URL
+2. **Enter your financials** — Income, savings (Quick mode) or all details (Expert mode)
+3. **Explore the affordability matrix** — See max home prices across 30 scenarios (6 down payment levels × 5 comfort levels)
+4. **Click a scenario** — See detailed breakdown, monthly costs, comfort gauge
+5. **Click "Find Best Strategy"** — Optimizer evaluates all viable financing strategies for that price
+6. **Review results** — See verdict, break-even year, 10-year advantage, monthly costs, comfort level, and opportunity cost
+7. **Explore tabs** — Switch to Expert mode for deeper analysis (Own vs Rent, Sensitivity, Taxes, Side-by-Side, Build Your Own)
+8. **Share** — Copy a formatted summary or share a link with your scenario encoded in the URL
 
 ### Tabs
 
 | Tab | Purpose | Mode |
 |-----|---------|------|
 | **Best Strategy** | Auto-find optimal financing strategy with verdict | Always |
-| **What Can I Buy?** | Affordability calculator with comfort targeting | Always |
+| **What Can I Buy?** | 2D affordability matrix (dp% × comfort%) with detail card | Always |
 | **Side-by-Side** | Compare up to 4 custom scenarios | Expert |
 | **Own vs Rent** | 30-year wealth projection comparison | Expert |
 | **Sensitivity** | Tornado chart + break-even matrix + "What If?" slider | Expert |
@@ -95,6 +97,7 @@ Open [http://localhost:3000](http://localhost:3000) to view the optimizer.
 | `calcScenario()` | calculations.js | Core model — computes all costs, deductions, and 30-year wealth trajectory |
 | `runOptimization()` | calculations.js | Iterates through strategy space, scores and ranks results |
 | `calcAffordability()` | calculations.js | Closed-form max price given income and savings constraints |
+| `calcAffordabilityMatrix()` | calculations.js | 2D grid of dp% × comfort% (30 cells) for scenario matrix |
 | `calcFedTax()` | calculations.js | Full federal bracket calculation |
 | `calcCAStateTax()` | calculations.js | CA state tax brackets including Mental Health Tax |
 | `calcNYStateTax()` / `calcNYCLocalTax()` | calculations.js | NY state + NYC local tax brackets |

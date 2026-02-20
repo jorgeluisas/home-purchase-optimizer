@@ -664,10 +664,52 @@ export const runOptimization = (params) => {
   };
 };
 
+// Affordability cell helper (internal) — computes one dp% scenario
+const calcAffordabilityCell = (dpPct, maxMonthlyHousing, { mr, n, rate, loanTerm, monthlyHOA, monthlyRent, monthlyTakeHome, totalSavings, minBuffer, loc }) => {
+  if (maxMonthlyHousing <= 0 || monthlyTakeHome <= 0) return { dpPct, maxPrice: 0, monthlyPITI: 0, cashNeeded: 0, remaining: 0, limitedBy: 'income', takeHomePct: 0, vsRent: 0, bufferMonths: 0, maxPriceByIncome: 0, monthlyBreakdown: { pi: 0, tax: 0, insurance: 0, pmi: 0, hoa: 0 } };
+
+  const loanFrac = 1 - dpPct;
+  const piFactor = loanFrac > 0 ? (mr === 0 ? loanFrac / n : loanFrac * (mr * Math.pow(1 + mr, n)) / (Math.pow(1 + mr, n) - 1)) : 0;
+  const taxFactor = loc.propTaxRate / 12;
+  const insFactor = loc.insuranceRate / 12;
+  const pmiFactor = loanFrac > 0.80 ? (loanFrac * loc.pmiRate / 12) : 0;
+  const perDollarCost = piFactor + taxFactor + insFactor + pmiFactor;
+  const fixedMonthly = monthlyHOA + (loc.parcelTax / 12);
+
+  const maxPriceByIncome = perDollarCost > 0 ? (maxMonthlyHousing - fixedMonthly) / perDollarCost : 0;
+
+  const availableCash = totalSavings - minBuffer;
+  const closingFactor = loc.closeBuy + loc.transferTax + loanFrac * 0.005 + 0.003;
+  const mansionTaxFactor = (loc.mansionTax && maxPriceByIncome > loc.mansionTax.threshold) ? loc.mansionTax.rate : 0;
+  const cashPerDollar = dpPct + closingFactor + mansionTaxFactor;
+  const fixedClosing = 2500;
+  const maxPriceBySavings = cashPerDollar > 0 ? (availableCash - fixedClosing) / cashPerDollar : 0;
+
+  const limitedBy = maxPriceByIncome <= maxPriceBySavings ? 'income' : 'savings';
+  const maxPrice = Math.max(0, Math.floor(Math.min(maxPriceByIncome, maxPriceBySavings)));
+
+  const loan = maxPrice * loanFrac;
+  const pi = loanFrac > 0 ? calcMonthly(loan, rate, loanTerm) : 0;
+  const tax = maxPrice * loc.propTaxRate / 12;
+  const insurance = maxPrice * loc.insuranceRate / 12;
+  const pmi = loanFrac > 0.80 ? loan * loc.pmiRate / 12 : 0;
+  const monthlyPITI = pi + tax + insurance + pmi + monthlyHOA;
+
+  const txCosts = calcTxCosts(maxPrice, loan, loc);
+  const cashNeeded = maxPrice * dpPct + txCosts.buy;
+  const remaining = totalSavings - cashNeeded;
+
+  const takeHomePct = monthlyTakeHome > 0 ? monthlyPITI / monthlyTakeHome : 0;
+  const vsRent = monthlyPITI - monthlyRent;
+  const bufferMonths = monthlyPITI > 0 ? remaining / monthlyPITI : 0;
+
+  return { dpPct, maxPrice, monthlyPITI, cashNeeded, remaining, limitedBy, takeHomePct, vsRent, bufferMonths, maxPriceByIncome: Math.floor(Math.max(0, maxPriceByIncome)), monthlyBreakdown: { pi, tax, insurance, pmi, hoa: monthlyHOA } };
+};
+
 // Affordability calculator
 export const calcAffordability = ({ grossIncome, totalSavings, mortgageRate, loanTerm, minBuffer, monthlyHOA = 0, monthlyOtherDebt = 0, monthlyRent = 0, effectiveTaxRate = 0.45, targetTakeHomePct = null, loc = LOCATIONS.sf }) => {
   const DTI_CEILING = 0.43;
-  const DP_OPTIONS = [0.05, 0.10, 0.20, 0.30, 0.50];
+  const DP_OPTIONS = [0.10, 0.15, 0.20, 0.25, 0.30, 0.40];
   const rate = mortgageRate / 100;
   const mr = rate / 12;
   const n = loanTerm * 12;
@@ -677,46 +719,29 @@ export const calcAffordability = ({ grossIncome, totalSavings, mortgageRate, loa
     ? Math.min(targetTakeHomePct * monthlyTakeHome, dtiMax)
     : dtiMax;
 
-  const options = DP_OPTIONS.map(dpPct => {
-    if (maxMonthlyHousing <= 0 || grossIncome <= 0) return { dpPct, maxPrice: 0, monthlyPITI: 0, cashNeeded: 0, remaining: 0, limitedBy: 'income', takeHomePct: 0, vsRent: 0, bufferMonths: 0, maxPriceByIncome: 0, monthlyBreakdown: { pi: 0, tax: 0, insurance: 0, pmi: 0, hoa: 0 } };
-
-    const loanFrac = 1 - dpPct;
-    const piFactor = loanFrac > 0 ? (mr === 0 ? loanFrac / n : loanFrac * (mr * Math.pow(1 + mr, n)) / (Math.pow(1 + mr, n) - 1)) : 0;
-    const taxFactor = loc.propTaxRate / 12;
-    const insFactor = loc.insuranceRate / 12;
-    const pmiFactor = loanFrac > 0.80 ? (loanFrac * loc.pmiRate / 12) : 0;
-    const perDollarCost = piFactor + taxFactor + insFactor + pmiFactor;
-    const fixedMonthly = monthlyHOA + (loc.parcelTax / 12);
-
-    const maxPriceByIncome = perDollarCost > 0 ? (maxMonthlyHousing - fixedMonthly) / perDollarCost : 0;
-
-    const availableCash = totalSavings - minBuffer;
-    const closingFactor = loc.closeBuy + loc.transferTax + loanFrac * 0.005 + 0.003;
-    const mansionTaxFactor = (loc.mansionTax && maxPriceByIncome > loc.mansionTax.threshold) ? loc.mansionTax.rate : 0;
-    const cashPerDollar = dpPct + closingFactor + mansionTaxFactor;
-    const fixedClosing = 2500;
-    const maxPriceBySavings = cashPerDollar > 0 ? (availableCash - fixedClosing) / cashPerDollar : 0;
-
-    const limitedBy = maxPriceByIncome <= maxPriceBySavings ? 'income' : 'savings';
-    const maxPrice = Math.max(0, Math.floor(Math.min(maxPriceByIncome, maxPriceBySavings)));
-
-    const loan = maxPrice * loanFrac;
-    const pi = loanFrac > 0 ? calcMonthly(loan, rate, loanTerm) : 0;
-    const tax = maxPrice * loc.propTaxRate / 12;
-    const insurance = maxPrice * loc.insuranceRate / 12;
-    const pmi = loanFrac > 0.80 ? loan * loc.pmiRate / 12 : 0;
-    const monthlyPITI = pi + tax + insurance + pmi + monthlyHOA;
-
-    const txCosts = calcTxCosts(maxPrice, loan, loc);
-    const cashNeeded = maxPrice * dpPct + txCosts.buy;
-    const remaining = totalSavings - cashNeeded;
-
-    const takeHomePct = monthlyTakeHome > 0 ? monthlyPITI / monthlyTakeHome : 0;
-    const vsRent = monthlyPITI - monthlyRent;
-    const bufferMonths = monthlyPITI > 0 ? remaining / monthlyPITI : 0;
-
-    return { dpPct, maxPrice, monthlyPITI, cashNeeded, remaining, limitedBy, takeHomePct, vsRent, bufferMonths, maxPriceByIncome: Math.floor(Math.max(0, maxPriceByIncome)), monthlyBreakdown: { pi, tax, insurance, pmi, hoa: monthlyHOA } };
-  });
+  const commonParams = { mr, n, rate, loanTerm, monthlyHOA, monthlyRent, monthlyTakeHome, totalSavings, minBuffer, loc };
+  const options = DP_OPTIONS.map(dpPct => calcAffordabilityCell(dpPct, maxMonthlyHousing, commonParams));
 
   return { options, monthlyTakeHome };
+};
+
+// Affordability matrix — 2D grid of dp% × comfort%
+export const calcAffordabilityMatrix = ({ grossIncome, totalSavings, mortgageRate, loanTerm, minBuffer, monthlyHOA = 0, monthlyOtherDebt = 0, monthlyRent = 0, effectiveTaxRate = 0.45, loc = LOCATIONS.sf }) => {
+  const DP_ROWS = [0.10, 0.15, 0.20, 0.25, 0.30, 0.40];
+  const COMFORT_COLS = [0.20, 0.25, 0.30, 0.40, 0.50];
+  const monthlyTakeHome = grossIncome * (1 - effectiveTaxRate) / 12;
+  const dtiMax = (grossIncome * 0.43 / 12) - monthlyOtherDebt;
+  const rate = mortgageRate / 100;
+  const mr = rate / 12;
+  const n = loanTerm * 12;
+  const commonParams = { mr, n, rate, loanTerm, monthlyHOA, monthlyRent, monthlyTakeHome, totalSavings, minBuffer, loc };
+
+  const cells = DP_ROWS.map(dpPct =>
+    COMFORT_COLS.map(comfortPct => {
+      const maxMonthly = Math.min(comfortPct * monthlyTakeHome, dtiMax);
+      return { ...calcAffordabilityCell(dpPct, maxMonthly, commonParams), comfortPct };
+    })
+  );
+
+  return { rows: DP_ROWS, cols: COMFORT_COLS, cells, monthlyTakeHome };
 };
