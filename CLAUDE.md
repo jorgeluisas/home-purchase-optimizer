@@ -1,17 +1,17 @@
 # Home Purchase Optimizer — Session Context
 
 ## What This App Is
-A React app for San Francisco home buyers. Compares down payment strategies, models wealth impact, shows tax implications, includes affordability calculator with comfort targeting, sensitivity analysis, and risk visualization. Built with Next.js + Recharts, inline styles + responsive CSS.
+A React app for home buyers in major US markets. Compares down payment strategies, models wealth impact, shows tax implications, includes affordability calculator with comfort targeting, sensitivity analysis, and risk visualization. Supports 4 locations: San Francisco (default), Florida, New York City, and Chicago. Built with Next.js + Recharts, inline styles + responsive CSS.
 
 ## Current Branch
-`main`
+`feature/accessible-defaults-comfort-ux`
 
 ## Project Structure
 
 ```
 app/
-├── HomePurchaseOptimizer.jsx   # Main component — all UI rendering (~4,870 lines)
-├── calculations.js             # All financial math & utilities (~626 lines)
+├── HomePurchaseOptimizer.jsx   # Main component — all UI rendering (~4,826 lines)
+├── calculations.js             # All financial math & utilities (~747 lines)
 ├── layout.js                   # App layout (viewport meta, dark background, metadata)
 └── page.js                     # Entry point (Suspense wrapper)
 ```
@@ -23,20 +23,41 @@ app/
 ### Core (original)
 - **Best Strategy tab**: Optimizer finds best down payment + leverage strategy, shows verdict (Strong Buy/Buy/Close Call/etc.), action plan, wealth impact, cash flow analysis
 - **Side-by-Side tab**: Compare custom scenarios head-to-head
-- **Build Your Own tab**: Manual strategy builder with editable SF assumptions
+- **Build Your Own tab**: Manual strategy builder with editable location-specific assumptions
 - **Own vs Rent tab**: Year-by-year wealth comparison with interactive chart
-- **Taxes tab**: Federal + CA bracket breakdown, SALT deduction analysis
+- **Taxes tab**: Federal + state bracket breakdown, SALT deduction analysis (adapts to selected location)
 
-### Affordability ("What Can I Buy?" tab)
-- **Hero card**: Recommends house price with key stats
-- **Comfort target selector**: 6 clickable chips (20%/30%/40%/50%/75%/Max) — user picks target % of take-home pay, prices recalculate via formula inversion
-- **Spectrum cards**: 4 leverage options (Play it Safe 50% / Sweet Spot 20% / Stretch 10% / Go Big 5%)
-- **Deep dive**: Monthly breakdown, stacked bar, comfort gauge, context comparisons
+### Multi-State Location Toggle
+- **4 locations**: San Francisco (default), Florida, New York City, Chicago (IL)
+- **Location dropdown** in "Your Finances" input section, first input before Target Home Price
+- **LOCATIONS config** in `calculations.js` — each location has property costs, state tax functions, deduction rules, Prop 13 flag, payroll tax, mansion tax, and display info
+- **State tax functions**: `calcCAStateTax`, `calcNYStateTax` + `calcNYCLocalTax`, `calcILStateTax` (flat 4.95%), Florida (no state tax)
+- **All calc functions parametrized** with `loc` param defaulting to `LOCATIONS.sf`
+- **Conditional rendering**: Prop 13 section (CA only), CA Mental Health Tax (CA only), mortgage deduction limit text, state-specific bracket tables on Tax tab
+- **Location persisted in URL** as `loc` param
+
+| | SF | Florida | NYC | Chicago |
+|---|---|---|---|---|
+| Property tax | 1.18% | 0.89% | 1.05% | 2.1% |
+| Transfer tax | 0.68% | 0.70% | 1.4% | 1.2% |
+| State income tax | CA brackets (1-12.3% + 1% MHT) | None | NY (4-10.9%) + NYC (3.08-3.88%) | IL flat 4.95% |
+| Prop 13 | Yes | No | No | No |
+| Mansion tax | No | No | Yes (1% > $1M) | No |
+| Payroll tax | 1.1% SDI | 0% | 0% | 0% |
+
+### Affordability ("What Can I Buy?" tab) — Scenario Matrix
+- **2D scenario matrix**: 6×5 grid (down payment % rows × comfort % columns) showing max home price + monthly PITI per cell
+- **Down payment rows**: 10%, 15%, 20%, 25%, 30%, 40%
+- **Comfort columns**: 20% (Excellent), 25% (Great), 30% (Comfortable), 40% (Stretched), 50% (Heavy)
+- **Cell interactions**: Click to select; orange border on selected, green highlight on sweet spot (20% dp × 25-30% comfort), grayed out for infeasible
+- **Selected scenario detail card**: Top metrics (Max Price, Cash Needed, Savings After, Buffer), monthly breakdown with stacked bar, comfort gauge, context comparisons, and "Find Best Strategy" CTA
+- **Simplified Quick-mode inputs**: Only Location, Gross Income, Savings, Filing Status, Mortgage Rate visible (Home Price and Monthly Rent hidden — set via matrix CTA)
+- **Quick-mode user journey**: Enter 4 inputs → see matrix → click cell → see details → click "Find Best Strategy" → optimization results
 - **Affordability on Summary tab**: Comfort card between verdict and recommendation on Best Strategy tab
 
 ### Tax Accuracy
 - `calcFedTax` — exact federal bracket calculation (in `calculations.js`)
-- `estEffectiveTaxRate` — exact fed + state + FICA (SS + Medicare + Additional Medicare) + CA SDI
+- `estEffectiveTaxRate` — exact fed + state + FICA (SS + Medicare + Additional Medicare) + location-aware payroll tax
 - `estimatedTakeHome` — single source of truth, derived from `estEffectiveTaxRate`
 
 ### UX Improvements
@@ -54,7 +75,7 @@ app/
 - **Sensitivity Analysis tab**: Tornado chart (variable impact on break-even) + 3x3 break-even matrix (appreciation x returns) + interactive "What If?" appreciation slider
 - **Chart annotations**: Break-even vertical line + 10/20/30-year milestones
 - **Downside risk visualization**: 3 risk scenarios (portfolio crash, home stagnation, rate spike)
-- **Editable assumptions**: 9 SF-specific constants (prop tax, transfer tax, PMI rate, etc.) with reset
+- **Editable assumptions**: 9 location-specific constants (prop tax, transfer tax, PMI rate, etc.) with reset — auto-syncs when location changes
 - **Opportunity cost metric**: 5th verdict metric showing down payment opportunity cost
 - **Shareable reports**: Copy Summary + Share Link buttons on Best Strategy and What Can I Buy? tabs
 - **Responsive design**: Full mobile-friendly CSS with 3 breakpoints (900px/600px/400px), 36 CSS class targets, viewport meta tag, mobile numeric keyboards, horizontal-scrolling tabs, responsive grids/charts/typography, and iOS Safari dark input styling
@@ -77,59 +98,75 @@ app/
 ### calculations.js (shared module)
 | Function | Purpose |
 |----------|---------|
+| `LOCATIONS` | Config object with sf, fl, nyc, chi — each has property costs, tax functions, deduction rules, display info |
+| `SF` | Backward-compat alias for `LOCATIONS.sf` |
 | `calcFedTax` | Exact federal tax from brackets |
-| `calcCAStateTax` | Exact CA state tax from brackets |
-| `getFedRate` / `getCARate` | Marginal tax rate lookups |
+| `calcCAStateTax` / `getCARate` | CA state tax brackets (1-12.3% + 1% Mental Health Tax) |
+| `calcNYStateTax` / `getNYStateRate` | NY state tax brackets (4-10.9%) |
+| `calcNYCLocalTax` / `getNYCLocalRate` | NYC local tax brackets (3.08-3.88%) |
+| `calcILStateTax` | IL flat 4.95% minus personal exemption |
+| `getFedRate` | Federal marginal tax rate lookup |
 | `calcMonthly` | Monthly mortgage payment |
 | `genAmort` | Amortization schedule generator |
 | `calcPMI` | PMI duration and cost estimator |
-| `calcTxCosts` | SF-specific transaction costs |
-| `calcScenario` | Core model — all costs, deductions, 30-year wealth trajectory |
-| `runOptimization` | Iterates strategy space, scores and ranks |
-| `calcAffordability` | Closed-form max price given income/savings, accepts `targetTakeHomePct` |
+| `calcTxCosts(price, loan, loc)` | Location-specific transaction costs (transfer tax, mansion tax, closing, commissions) |
+| `calcScenario({...params, loc})` | Core model — all costs, deductions, 30-year wealth trajectory |
+| `runOptimization({...params, loc})` | Iterates strategy space, scores and ranks |
+| `calcAffordabilityCell` | Internal helper — computes one dp% scenario (used by both `calcAffordability` and `calcAffordabilityMatrix`) |
+| `calcAffordability({...params, loc})` | Closed-form max price given income/savings, accepts `targetTakeHomePct` |
+| `calcAffordabilityMatrix({...params, loc})` | 2D grid of dp% × comfort% — returns `{ rows, cols, cells, monthlyTakeHome }` |
 | `fmt$` / `fmtPct` / `fmtNum` | Formatting utilities |
-| `SF` | SF-specific constants object |
-| `URL_PARAM_MAP` / `REVERSE_URL_MAP` | URL serialization maps |
+| `URL_PARAM_MAP` / `REVERSE_URL_MAP` | URL serialization maps (includes `location: 'loc'`) |
 
 ### HomePurchaseOptimizer.jsx (main component)
 | Function | Line | Purpose |
 |----------|------|---------|
 | `PresetSelector` | ~254 | Conservative/Balanced/Aggressive preset component |
-| `copyShareLink` | ~531 | Copy shareable URL to clipboard |
-| `estEffectiveTaxRate` | ~624 | Exact effective tax rate memo |
-| `affordability` | ~634 | Affordability calculation memo |
-| `estimatedTakeHome` | ~789 | Monthly take-home pay memo |
-| `copyResultsSummary` | ~794 | Copy formatted strategy summary to clipboard |
-| `copyAffordabilitySummary` | ~847 | Copy formatted affordability summary to clipboard |
-| `renderOptimize` | ~1224 | Best Strategy tab (includes affordability indicator) |
-| `renderManual` | ~1881 | Build Your Own tab (with editable assumptions) |
-| `renderHolding` | ~2329 | Own vs Rent tab with Recharts |
-| `renderScenarios` | ~2725 | Side-by-Side comparison tab |
-| `renderTax` | ~3050 | Taxes tab |
-| `renderSensitivity` | ~3371 | Sensitivity Analysis tab |
-| `renderAffordability` | ~3917 | What Can I Buy? tab |
+| `copyShareLink` | ~563 | Copy shareable URL to clipboard |
+| `estEffectiveTaxRate` | ~658 | Exact effective tax rate memo (location-aware payroll tax) |
+| `affordability` | ~670 | Affordability calculation memo |
+| `affordabilityMatrix` | ~684 | 2D affordability matrix memo (dp% × comfort%) |
+| `estimatedTakeHome` | ~833 | Monthly take-home pay memo |
+| `copyResultsSummary` | ~838 | Copy formatted strategy summary to clipboard |
+| `copyAffordabilitySummary` | ~891 | Copy formatted affordability summary to clipboard |
+| `renderOptimize` | ~1267 | Best Strategy tab (includes affordability indicator) |
+| `renderManual` | ~1941 | Build Your Own tab (with editable assumptions) |
+| `renderHolding` | ~2391 | Own vs Rent tab with Recharts |
+| `renderScenarios` | ~2790 | Side-by-Side comparison tab |
+| `renderTax` | ~3115 | Taxes tab (location-specific brackets and labels) |
+| `renderSensitivity` | ~3438 | Sensitivity Analysis tab |
+| `renderAffordability` | ~3985 | What Can I Buy? tab (2D scenario matrix) |
 
 ## Key State Variables
 
 ### Financial Inputs
-`homePrice`, `totalSavings`, `stockPortfolio`, `grossIncome`, `monthlyRent`, `rentGrowth`, `filingStatus`, `mortgageRate`, `marginRate`, `helocRate`, `cashOutRefiRate`, `investmentReturn`, `dividendYield`, `homeAppreciation`, `loanTerm`, `minBuffer`
+`homePrice` (default $1M), `totalSavings` ($200K), `stockPortfolio` ($500K), `grossIncome` ($500K), `monthlyRent` ($5K), `rentGrowth`, `filingStatus`, `mortgageRate`, `marginRate`, `helocRate`, `cashOutRefiRate`, `investmentReturn`, `dividendYield`, `homeAppreciation`, `loanTerm`, `minBuffer` ($0)
+
+### Location
+`selectedLocation` (default 'sf') — derived `loc = LOCATIONS[selectedLocation]` used throughout
 
 ### Affordability
-`affMonthlyHOA`, `affMonthlyOtherDebt`, `affSelectedDpPct`, `affTargetComfort` (null=max or 0.20-0.75)
+`affMonthlyHOA`, `affMonthlyOtherDebt`, `affSelectedDpPct`, `affTargetComfort` (default 0.30, range 0.20-0.50)
 
 ### UX / Mode
 `isExpertMode`, `activePreset`, `showOptimizeDetails`, `showSensitivity`, `showAssumptions`, `validationErrors`, `summaryCopied`, `affordCopied`, `linkCopied`, `whatIfAppreciation`
 
 ### Editable Assumptions
-`customAssumptions` (object with propTaxRate, transferTax, parcelTax, realtorComm, closeBuy, closeSell, insuranceRate, maintenanceRate, pmiRate)
+`customAssumptions` (object with propTaxRate, transferTax, parcelTax, realtorComm, closeBuy, closeSell, insuranceRate, maintenanceRate, pmiRate) — auto-syncs to location defaults when `selectedLocation` changes
 
 ## Architecture Notes
 - **Two-file architecture**: `calculations.js` (pure math, no React) + `HomePurchaseOptimizer.jsx` (all UI). Intentionally kept as two files — see "Architecture decision" above.
-- **Comfort tiers**: Defined inline in `renderAffordability`, `renderOptimize`, and copy callbacks — could extract to shared helper.
+- **Multi-state pattern**: `LOCATIONS` config object with tax functions as first-class references (`loc.calcStateTax`, `loc.getStateRate`). All calc functions accept `loc` param. UI code never needs to know which state — just calls `loc.calcStateTax(income, filingStatus)`.
+- **Variable naming**: All CA-specific variable names renamed to state-generic: `caRate` → `stateRate`, `caDeductibleMortgageInterest` → `stateDeductibleMortgageInterest`, `shouldItemizeCA` → `shouldItemizeState`, etc.
+- **Comfort tiers**: 5 tiers (20% Excellent, 25% Great, 30% Comfortable, 40% Stretched, 50% Heavy). Used as matrix columns in `renderAffordability` and inline in `renderOptimize` and copy callbacks.
 - **`taxBreakdown` useMemo**: Has duplicate bracket data for display only. Actual computation uses `calcFedTax`/`calcCAStateTax`.
-- **URL params**: Hydrated on mount, debounced sync on state changes.
+- **URL params**: Hydrated on mount, debounced sync on state changes. Location stored as `loc` string param.
 - **Responsive CSS**: `<style>` tag with global resets (iOS Safari dark inputs via `!important`, `color-scheme: dark`, `appearance: none`) + 3 breakpoints (900px tablet, 600px mobile, 400px extra-small) + 36 CSS class targets for `!important` overrides on inline styles. Dark background (`#0c1220`) set on `<html>` and `<body>` in layout.js to prevent iOS white bleed-through during elastic scrolling.
-- **Hook ordering**: Copy callbacks (`copyResultsSummary`, `copyAffordabilitySummary`) must be declared AFTER `estimatedTakeHome` and `affordability` to avoid TDZ errors.
+- **Hook ordering**: Copy callbacks (`copyResultsSummary`, `copyAffordabilitySummary`) must be declared AFTER `estimatedTakeHome` and `affordability`/`affordabilityMatrix` to avoid TDZ errors.
+- **Quick-mode input hiding**: Target Home Price, Monthly Rent, and Run Optimization button are wrapped in `{isExpertMode && (...)}`. In Quick mode, homePrice is set via the matrix CTA's `handleOptimize(overrideHomePrice)`.
+- **`handleOptimize` override**: Accepts optional `overrideHomePrice` param to avoid stale-state issue when calling from the affordability matrix CTA (state setter + callback in same render).
+- **Affordability matrix**: `calcAffordabilityMatrix` computes 30 cells (6 dp% × 5 comfort%). Internal `calcAffordabilityCell` helper shared with `calcAffordability`. Reuses `.hpo-matrix-wrapper` CSS class from sensitivity matrix for horizontal scroll on mobile.
+- **customAssumptions sync**: useEffect on `selectedLocation` updates `customAssumptions` to match new location's defaults.
 
 ## ROADMAP Status
 

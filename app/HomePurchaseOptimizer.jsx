@@ -8,7 +8,7 @@ import {
   fmt$, fmtPct, fmtPctWhole, fmtNum,
   calcFedTax, getFedRate,
   calcMonthly, genAmort, calcPMI, calcTxCosts,
-  calcScenario, runOptimization, calcAffordability
+  calcScenario, runOptimization, calcAffordability, calcAffordabilityMatrix
 } from './calculations';
 
 // Info Box Component
@@ -323,7 +323,7 @@ export default function HomePurchaseOptimizer() {
   const [affMonthlyHOA, setAffMonthlyHOA] = useState(0);
   const [affMonthlyOtherDebt, setAffMonthlyOtherDebt] = useState(0);
   const [affSelectedDpPct, setAffSelectedDpPct] = useState(0.20);
-  const [affTargetComfort, setAffTargetComfort] = useState(0.30); // null = max, or 0.20/0.25/0.30/0.40/0.50
+  const [affTargetComfort, setAffTargetComfort] = useState(0.30); // 0.20/0.25/0.30/0.40/0.50
 
   const [activeTab, setActiveTab] = useState('afford');
   const [optimizationResult, setOptimizationResult] = useState(null);
@@ -589,9 +589,10 @@ export default function HomePurchaseOptimizer() {
   const combRate = fedRate + stateRate;
   const stdDeduction = filingStatus === 'married' ? 29200 : 14600;
   
-  const handleOptimize = useCallback(() => {
+  const handleOptimize = useCallback((overrideHomePrice) => {
+    const priceToUse = overrideHomePrice || homePrice;
     const result = runOptimization({
-      homePrice, totalSavings, stockPortfolio, mortgageRate: mortgageRate/100, cashOutRefiRate: cashOutRefiRate/100, loanTerm,
+      homePrice: priceToUse, totalSavings, stockPortfolio, mortgageRate: mortgageRate/100, cashOutRefiRate: cashOutRefiRate/100, loanTerm,
       appreciationRate: homeAppreciation/100, investmentReturn: investmentReturn/100,
       dividendYield: dividendYield/100, monthlyRent, rentGrowthRate: rentGrowth/100, marginRate: marginRate/100, helocRate: helocRate/100,
       fedRate, stateRate, stateTax, stdDeduction, minBuffer, filingStatus, grossIncome, loc
@@ -679,6 +680,13 @@ export default function HomePurchaseOptimizer() {
     targetTakeHomePct: affTargetComfort,
     loc,
   }), [grossIncome, totalSavings, mortgageRate, loanTerm, minBuffer, affMonthlyHOA, affMonthlyOtherDebt, monthlyRent, estEffectiveTaxRate, affTargetComfort, selectedLocation]);
+
+  const affordabilityMatrix = useMemo(() => calcAffordabilityMatrix({
+    grossIncome, totalSavings, mortgageRate, loanTerm, minBuffer,
+    monthlyHOA: affMonthlyHOA, monthlyOtherDebt: affMonthlyOtherDebt,
+    monthlyRent, effectiveTaxRate: estEffectiveTaxRate, loc,
+  }), [grossIncome, totalSavings, mortgageRate, loanTerm, minBuffer,
+       affMonthlyHOA, affMonthlyOtherDebt, monthlyRent, estEffectiveTaxRate, selectedLocation]);
 
   const s = {
     container: { fontFamily: "'IBM Plex Sans', -apple-system, sans-serif", background: 'linear-gradient(135deg, #0c1220 0%, #1a1a2e 50%, #16213e 100%)', minHeight: '100vh', color: '#e0e0e0', padding: '24px', overflowX: 'hidden', boxSizing: 'border-box' },
@@ -881,10 +889,12 @@ export default function HomePurchaseOptimizer() {
 
   // Copy affordability summary to clipboard
   const copyAffordabilitySummary = useCallback(() => {
-    const { options, monthlyTakeHome: mth } = affordability;
-    const best = options.find(o => o.dpPct === 0.20 && o.remaining >= 0 && o.maxPrice > 0)
-      || options.find(o => o.remaining >= 0 && o.maxPrice > 0);
-    if (!best) return;
+    const matrix = affordabilityMatrix;
+    const mth = matrix.monthlyTakeHome;
+    const selRowIdx = matrix.rows.indexOf(affSelectedDpPct);
+    const selColIdx = matrix.cols.indexOf(affTargetComfort);
+    const sel = (selRowIdx >= 0 && selColIdx >= 0) ? matrix.cells[selRowIdx][selColIdx] : null;
+    if (!sel || sel.maxPrice <= 0) return;
     const comfortLabel = (pct) => {
       if (pct <= 0.20) return 'Excellent';
       if (pct <= 0.25) return 'Great';
@@ -897,16 +907,12 @@ export default function HomePurchaseOptimizer() {
       `HOME AFFORDABILITY ANALYSIS`,
       `═══════════════════════════`,
       ``,
-      `Recommended Price: ${fmt$(best.maxPrice)} (${fmtPctWhole(best.dpPct * 100)} down)`,
-      `Monthly Payment: ${fmt$(best.monthlyPITI)}/mo`,
-      `Comfort Level: ${comfortLabel(best.takeHomePct)} (${fmtPctWhole(best.takeHomePct * 100)} of take-home)`,
-      `Cash Needed: ${fmt$(best.cashNeeded)}  |  Remaining: ${fmt$(best.remaining)}`,
-      `Limited By: ${best.limitedBy === 'income' ? 'Income (DTI)' : 'Savings'}`,
-      ``,
-      `ALL OPTIONS`,
-      ...options.filter(o => o.maxPrice > 0).map(o =>
-        `  ${fmtPctWhole(o.dpPct * 100)} down → ${fmt$(o.maxPrice)} (${fmt$(o.monthlyPITI)}/mo, ${comfortLabel(o.takeHomePct)})`
-      ),
+      `Selected Scenario: ${fmtPctWhole(sel.dpPct * 100)} down · ${fmtPctWhole(affTargetComfort * 100)} of take-home`,
+      `Max Home Price: ${fmt$(sel.maxPrice)}`,
+      `Monthly Payment: ${fmt$(sel.monthlyPITI)}/mo`,
+      `Comfort Level: ${comfortLabel(sel.takeHomePct)} (${fmtPctWhole(sel.takeHomePct * 100)} of take-home)`,
+      `Cash Needed: ${fmt$(sel.cashNeeded)}  |  Remaining: ${fmt$(sel.remaining)}`,
+      `Limited By: ${sel.limitedBy === 'income' ? 'Income (DTI)' : 'Savings'}`,
       ``,
       `YOUR NUMBERS`,
       `Gross Income: ${fmt$(grossIncome)}  |  Take-Home: ~${fmt$(mth)}/mo`,
@@ -919,7 +925,7 @@ export default function HomePurchaseOptimizer() {
       setAffordCopied(true);
       setTimeout(() => setAffordCopied(false), 2000);
     });
-  }, [affordability, grossIncome, totalSavings, mortgageRate]);
+  }, [affordabilityMatrix, affSelectedDpPct, affTargetComfort, grossIncome, totalSavings, mortgageRate]);
 
   // Feature 1: Total Wealth Impact Summary
   const renderWealthImpactSummary = (opt) => {
@@ -1263,6 +1269,21 @@ export default function HomePurchaseOptimizer() {
     const top5 = optimizationResult?.topFive || [];
     const diag = optimizationResult?.diagnostics;
     
+    if (!opt && !isExpertMode) {
+      return (
+        <div style={{ textAlign: 'center', padding: '60px 40px' }}>
+          <div style={{ fontSize: '3rem', marginBottom: '16px' }}>👈</div>
+          <h2 className="hpo-section-title" style={{ fontSize: '1.5rem', fontWeight: '500', marginBottom: '16px', color: '#fff' }}>Pick a scenario first</h2>
+          <p style={{ color: '#c0c0d0', marginBottom: '24px', maxWidth: '550px', margin: '0 auto 24px', lineHeight: '1.7' }}>
+            Go to "What Can I Buy?" to explore your options, then click "Find Best Strategy."
+          </p>
+          <button onClick={() => setActiveTab('afford')} style={{ ...s.btn, width: 'auto', padding: '16px 48px' }}>
+            Go to What Can I Buy?
+          </button>
+        </div>
+      );
+    }
+
     if (!opt) {
       return (
         <div style={{ textAlign: 'center', padding: '60px 40px' }}>
@@ -3962,28 +3983,9 @@ export default function HomePurchaseOptimizer() {
   };
 
   const renderAffordability = () => {
-    const { options, monthlyTakeHome } = affordability;
+    const matrix = affordabilityMatrix;
+    const { monthlyTakeHome } = affordability;
 
-    const leverageLabels = {
-      0.50: { name: 'Play it Safe', desc: 'Large down payment, low monthly costs, instant equity' },
-      0.30: { name: 'Solid', desc: 'Strong equity from day one with manageable payments' },
-      0.20: { name: 'Sweet Spot', desc: 'Avoids PMI, balances buying power with financial flexibility' },
-      0.10: { name: 'Stretch', desc: 'More house, but PMI applies until you hit 20% equity' },
-      0.05: { name: 'Go Big', desc: 'Maximum buying power — PMI and higher monthly costs' },
-    };
-
-    // Reverse so cards go from least leverage (50%) to most (5%)
-    const displayOptions = [...options].reverse().map(opt => ({
-      ...opt,
-      ...(leverageLabels[opt.dpPct] || { name: `${(opt.dpPct * 100).toFixed(0)}% Down`, desc: '' }),
-    }));
-
-    // Recommendation: prefer 20% (no PMI), fall back to 30%, then whatever works
-    const recommended = displayOptions.find(o => o.dpPct === 0.20 && o.remaining >= 0 && o.maxPrice > 0)
-      || displayOptions.find(o => o.dpPct === 0.30 && o.remaining >= 0 && o.maxPrice > 0)
-      || displayOptions.find(o => o.remaining >= 0 && o.maxPrice > 0);
-
-    const selected = displayOptions.find(o => o.dpPct === affSelectedDpPct) || displayOptions[0];
     const comfortLevel = (pct) => {
       if (pct <= 0.20) return { label: 'Excellent', color: '#4ade80', desc: 'Under 20% of take-home — plenty left for retirement savings, investments, and lifestyle' };
       if (pct <= 0.25) return { label: 'Great', color: '#34d399', desc: 'Under 25% of take-home — strong financial cushion with room for savings' };
@@ -3992,191 +3994,103 @@ export default function HomePurchaseOptimizer() {
       if (pct <= 0.50) return { label: 'Heavy', color: '#f97316', desc: 'HUD considers this "housing-burdened" — expect trade-offs on savings and lifestyle' };
       return { label: 'Unsustainable', color: '#f87171', desc: 'Over half your paycheck goes to housing — very high financial stress risk' };
     };
-    const takeHomeColor = (pct) => comfortLevel(pct).color;
+
+    const comfortLabels = { 0.20: 'Excellent', 0.25: 'Great', 0.30: 'Comfortable', 0.40: 'Stretched', 0.50: 'Heavy' };
+
+    // Find selected cell from matrix
+    const selRowIdx = matrix.rows.indexOf(affSelectedDpPct);
+    const selColIdx = matrix.cols.indexOf(affTargetComfort);
+    const selected = (selRowIdx >= 0 && selColIdx >= 0) ? matrix.cells[selRowIdx][selColIdx] : null;
 
     return (
       <>
-        {/* Educational Intro */}
+        {/* Intro */}
         <div className="hpo-card" style={{ ...s.card, background: 'linear-gradient(135deg, rgba(96,165,250,0.08), rgba(59,130,246,0.04))', border: '1px solid rgba(96,165,250,0.2)', marginBottom: '24px' }}>
-          <h3 style={{ ...s.section, marginTop: 0, color: '#60a5fa' }}>How Home Affordability Works</h3>
+          <h3 style={{ ...s.section, marginTop: 0, color: '#60a5fa' }}>Based on your income and savings, here's what you can afford</h3>
           <div style={{ fontSize: '0.88rem', color: '#c0c0d0', lineHeight: '1.8' }}>
-            <p style={{ marginBottom: '12px' }}>When you apply for a mortgage, lenders check two things:</p>
-            <div style={{ display: 'grid', gap: '10px', marginBottom: '12px' }}>
-              <div style={{ padding: '12px 16px', background: 'rgba(0,0,0,0.2)', borderRadius: '8px', display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
-                <span style={{ fontSize: '1.2rem' }}>1</span>
-                <div><strong style={{ color: '#fbbf24' }}>Debt-to-Income (DTI) Ratio</strong> — Your monthly housing costs (mortgage + taxes + insurance) can't exceed ~43% of your gross monthly income. This is the main limit on how much house your <em>income</em> supports.</div>
-              </div>
-              <div style={{ padding: '12px 16px', background: 'rgba(0,0,0,0.2)', borderRadius: '8px', display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
-                <span style={{ fontSize: '1.2rem' }}>2</span>
-                <div><strong style={{ color: '#a78bfa' }}>Down Payment + Closing Costs</strong> — You need enough cash for the down payment (3-50% of home price) plus ~3-4% in closing costs. This is the limit on how much house your <em>savings</em> supports.</div>
-              </div>
+            <p style={{ marginBottom: '8px' }}>Each cell shows the maximum home price for a given down payment and comfort level. <strong style={{ color: '#fff' }}>Click a scenario</strong> to see the full breakdown, then find your best financing strategy.</p>
+            <div style={{ fontSize: '0.82rem', color: '#8b8ba7' }}>
+              <strong style={{ color: '#fbbf24' }}>Columns</strong> = % of your after-tax pay going to housing &nbsp;·&nbsp; <strong style={{ color: '#a78bfa' }}>Rows</strong> = down payment %
             </div>
-            <p style={{ fontSize: '0.82rem', color: '#8b8ba7' }}>Below, we calculate the maximum home price limited by whichever constraint binds first — income or savings. The comfort level shows how that payment compares to your actual take-home pay (after taxes).</p>
           </div>
         </div>
 
-        {/* Comfort Target Chips — above hero card so users see it drives the price */}
-        <div className="hpo-card" style={{ ...s.card, textAlign: 'center', marginBottom: '16px' }}>
-          <div style={{ fontSize: '0.75rem', color: '#8b8ba7', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '10px' }}>How much of your paycheck for housing?</div>
-          <div className="hpo-comfort-chips" style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '8px', marginBottom: '12px' }}>
-            {[
-              { value: 0.20, label: '20%', desc: 'Excellent', color: '#4ade80' },
-              { value: 0.25, label: '25%', desc: 'Great', color: '#34d399' },
-              { value: 0.30, label: '30%', desc: 'Comfortable', color: '#60a5fa' },
-              { value: 0.40, label: '40%', desc: 'Stretched', color: '#fbbf24' },
-              { value: 0.50, label: '50%', desc: 'Heavy', color: '#f97316' },
-              { value: null, label: 'Max', desc: 'DTI Ceiling', color: '#a78bfa' },
-            ].map((opt, i) => {
-              const isSelected = affTargetComfort === opt.value;
-              return (
-                <div key={i} onClick={() => setAffTargetComfort(opt.value)} style={{
-                  background: isSelected ? `${opt.color}20` : 'rgba(255,255,255,0.03)',
-                  border: isSelected ? `2px solid ${opt.color}` : '1px solid rgba(255,255,255,0.06)',
-                  borderRadius: '10px', padding: '10px 6px', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s',
-                }}>
-                  <div style={{ fontSize: '1rem', fontWeight: '700', color: isSelected ? opt.color : '#fff', marginBottom: '2px' }}>{opt.label}</div>
-                  <div style={{ fontSize: '0.6rem', color: isSelected ? opt.color : '#8b8ba7', fontWeight: '600' }}>{opt.desc}</div>
-                </div>
-              );
-            })}
-          </div>
-          <div style={{ fontSize: '0.8rem', color: '#8b8ba7', lineHeight: '1.5' }}>
-            {affTargetComfort !== null
-              ? <>Targeting <strong style={{ color: '#60a5fa' }}>{fmtPctWhole(affTargetComfort * 100)}</strong> of your after-tax take-home ({fmt$(monthlyTakeHome)}/mo) for housing costs.</>
-              : <>Showing the <strong style={{ color: '#a78bfa' }}>absolute maximum</strong> lenders would approve (43% DTI ceiling).</>
-            }
-          </div>
-        </div>
-
-        {/* Section A: The Answer */}
-        {recommended && recommended.maxPrice > 0 && (
-          <div className="hpo-plan-card" style={{ ...s.planCard, textAlign: 'center', marginBottom: '24px' }}>
-            <div style={{ fontSize: '0.8rem', color: '#f97316', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '12px' }}>Based on your situation, shop for homes around</div>
-            <div className="hpo-hero-price" style={{ fontSize: '3.2rem', fontWeight: '700', color: '#fff', marginBottom: '8px' }}>{fmt$(recommended.maxPrice)}</div>
-            <div style={{ fontSize: '1rem', color: '#b0b0c0', marginBottom: '20px' }}>
-              {fmtPctWhole(recommended.dpPct * 100)} down · {fmt$(recommended.monthlyPITI)}/mo · {fmtPctWhole(recommended.takeHomePct * 100)} of take-home pay
-            </div>
-            <div className="hpo-preset-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', maxWidth: '500px', margin: '0 auto 20px' }}>
-              <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '10px', padding: '12px' }}>
-                <div style={{ fontSize: '0.65rem', color: '#8b8ba7', textTransform: 'uppercase', marginBottom: '4px' }}>vs Your Rent</div>
-                <div style={{ fontSize: '1rem', fontWeight: '600', color: recommended.vsRent > 0 ? '#fbbf24' : '#4ade80' }}>
-                  {recommended.vsRent >= 0 ? '+' : ''}{fmt$(recommended.vsRent)}/mo
-                </div>
-              </div>
-              <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '10px', padding: '12px' }}>
-                <div style={{ fontSize: '0.65rem', color: '#8b8ba7', textTransform: 'uppercase', marginBottom: '4px' }}>Savings After</div>
-                <div style={{ fontSize: '1rem', fontWeight: '600', color: '#4ade80' }}>{fmt$(recommended.remaining)}</div>
-              </div>
-              <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '10px', padding: '12px' }}>
-                <div style={{ fontSize: '0.65rem', color: '#8b8ba7', textTransform: 'uppercase', marginBottom: '4px' }}>Buffer Runway</div>
-                <div style={{ fontSize: '1rem', fontWeight: '600', color: '#4ade80' }}>{Math.floor(recommended.bufferMonths)} months</div>
-              </div>
-            </div>
-            <div style={{ fontSize: '0.85rem', color: '#8b8ba7', marginBottom: '20px', maxWidth: '550px', margin: '0 auto 20px', lineHeight: '1.6' }}>
-              {recommended.dpPct === 0.20
-                ? `20% down avoids PMI, keeps ${fmtPctWhole((recommended.remaining / totalSavings) * 100)} of your savings invested, and housing is ${fmtPctWhole(recommended.takeHomePct * 100)} of your take-home — well within comfort zone.`
-                : recommended.dpPct === 0.30
-                ? `30% down builds strong equity and keeps your monthly at ${fmtPctWhole(recommended.takeHomePct * 100)} of take-home.`
-                : recommended.dpPct === 0.10
-                ? `10% down gets you more house. PMI adds to costs until you reach 20% equity. Housing is ${fmtPctWhole(recommended.takeHomePct * 100)} of take-home.`
-                : recommended.dpPct === 0.50
-                ? `50% down minimizes your monthly payment to just ${fmtPctWhole(recommended.takeHomePct * 100)} of take-home.`
-                : `At ${fmtPctWhole(recommended.dpPct * 100)} down, housing is ${fmtPctWhole(recommended.takeHomePct * 100)} of your take-home pay.`}
-            </div>
-            {recommended.limitedBy === 'savings' && recommended.maxPriceByIncome > recommended.maxPrice && (
-              <div style={{ fontSize: '0.8rem', color: '#a78bfa', marginBottom: '20px', padding: '10px 16px', background: 'rgba(167,139,250,0.08)', borderRadius: '8px', border: '1px solid rgba(167,139,250,0.2)', maxWidth: '550px', margin: '0 auto 20px' }}>
-                Your income supports up to {fmt$(recommended.maxPriceByIncome)} — but your available cash ({fmt$(totalSavings - minBuffer)}) limits you to {fmt$(recommended.maxPrice)} at {fmtPctWhole(recommended.dpPct * 100)} down. Increase savings or lower your buffer to unlock more.
-              </div>
-            )}
-            {recommended.limitedBy === 'income' && (
-              <div style={{ fontSize: '0.8rem', color: '#fbbf24', marginBottom: '20px', padding: '10px 16px', background: 'rgba(251,191,36,0.08)', borderRadius: '8px', border: '1px solid rgba(251,191,36,0.2)', maxWidth: '550px', margin: '0 auto 20px' }}>
-                Your savings could support a bigger down payment, but monthly costs at this price are near the lender max (43% DTI).
-              </div>
-            )}
-            <button onClick={() => { setHomePrice(recommended.maxPrice); setActiveTab('optimize'); }} style={{
-              padding: '14px 32px', borderRadius: '10px', border: 'none', cursor: 'pointer', fontSize: '1rem', fontWeight: '600',
-              background: 'linear-gradient(135deg, #f97316, #eab308)', color: '#fff',
-            }}>Use This Price</button>
-          </div>
-        )}
-
-        {/* Additional Inputs */}
+        {/* 2D Scenario Matrix */}
         <div className="hpo-card" style={s.card}>
-          <h3 style={{ ...s.section, marginTop: 0 }}>Additional Monthly Costs</h3>
-          <div className="hpo-two-col" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-            <div style={s.inputGroup}>
-              <label style={s.label}>Monthly HOA</label>
-              <CurrencyInput value={affMonthlyHOA} onChange={setAffMonthlyHOA} min={0} max={5000} style={s.input} />
-            </div>
-            <div style={s.inputGroup}>
-              <label style={s.label}>Other Monthly Debt (car, student loans, etc.)</label>
-              <CurrencyInput value={affMonthlyOtherDebt} onChange={setAffMonthlyOtherDebt} min={0} max={50000} style={s.input} />
-            </div>
+          <div className="hpo-matrix-wrapper" style={{ overflowX: 'auto' }}>
+            <table style={{ ...s.table, textAlign: 'center', minWidth: '600px' }}>
+              <thead>
+                <tr>
+                  <th style={{ ...s.th, textAlign: 'left', minWidth: '80px' }}>Down %</th>
+                  {matrix.cols.map(c => (
+                    <th key={c} style={{ ...s.th, minWidth: '100px' }}>
+                      <div>{(c * 100).toFixed(0)}% of pay</div>
+                      <div style={{ fontSize: '0.6rem', fontWeight: '400', color: comfortLevel(c).color, marginTop: '2px' }}>{comfortLabels[c]}</div>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {matrix.rows.map((dpPct, ri) => (
+                  <tr key={ri}>
+                    <td style={{ ...s.td, fontWeight: 600, textAlign: 'left', whiteSpace: 'nowrap' }}>{(dpPct * 100).toFixed(0)}% down</td>
+                    {matrix.cols.map((comfortPct, ci) => {
+                      const cell = matrix.cells[ri][ci];
+                      const isSelected = dpPct === affSelectedDpPct && comfortPct === affTargetComfort;
+                      const isSweetSpot = dpPct === 0.20 && (comfortPct === 0.25 || comfortPct === 0.30);
+                      const isFeasible = cell.remaining >= 0 && cell.maxPrice > 0;
+                      return (
+                        <td key={ci}
+                          onClick={() => isFeasible && (setAffSelectedDpPct(dpPct), setAffTargetComfort(comfortPct))}
+                          style={{
+                            ...s.td, cursor: isFeasible ? 'pointer' : 'default',
+                            background: isSelected ? 'rgba(249,115,22,0.2)' : isSweetSpot && isFeasible ? 'rgba(52,211,153,0.12)' : 'transparent',
+                            border: isSelected ? '2px solid #f97316' : '1px solid rgba(255,255,255,0.05)',
+                            opacity: isFeasible ? 1 : 0.3,
+                            transition: 'all 0.15s',
+                            position: 'relative',
+                            padding: '14px 10px',
+                          }}>
+                          {isFeasible ? <>
+                            {isSweetSpot && !isSelected && (
+                              <div style={{ position: 'absolute', top: '2px', right: '4px', fontSize: '0.5rem', color: '#34d399', fontWeight: '600' }}>Sweet Spot</div>
+                            )}
+                            <div style={{ fontSize: '1rem', fontWeight: 600, color: '#fff' }}>{fmt$(cell.maxPrice)}</div>
+                            <div style={{ fontSize: '0.7rem', color: '#8b8ba7', marginTop: '2px' }}>{fmt$(cell.monthlyPITI)}/mo</div>
+                          </> : <div style={{ color: '#555' }}>—</div>}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div style={{ fontSize: '0.75rem', color: '#8b8ba7', marginTop: '12px', textAlign: 'center' }}>
+            Take-home pay: ~{fmt$(monthlyTakeHome)}/mo · Grayed cells exceed your savings
           </div>
         </div>
 
-        {/* Section B: The Spectrum */}
-        <h3 style={s.section}>{affTargetComfort !== null ? `Homes at ${fmtPctWhole(affTargetComfort * 100)} of take-home` : 'What if you want more or less house?'}</h3>
-        <p style={{ fontSize: '0.85rem', color: '#8b8ba7', marginBottom: '16px', marginTop: '-8px' }}>
-          {affTargetComfort !== null
-            ? `Each card shows the max home price where monthly costs stay at ~${fmtPctWhole(affTargetComfort * 100)} of take-home. Click to explore.`
-            : 'Less down payment = more house, but higher monthly costs. Click to explore.'}
-        </p>
-        <div className="hpo-spectrum-cards" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '24px' }}>
-          {displayOptions.filter(o => o.dpPct !== 0.30).map((opt, i) => {
-            const isSelected = opt.dpPct === affSelectedDpPct;
-            const isRec = recommended && opt.dpPct === recommended.dpPct;
-            const thPct = opt.takeHomePct;
-            const barWidth = Math.min(100, Math.max(5, thPct * 200)); // scale 0-50% to 0-100% width
-            return (
-              <div key={i} onClick={() => setAffSelectedDpPct(opt.dpPct)} style={{
-                background: isSelected ? 'rgba(249,115,22,0.12)' : 'rgba(255,255,255,0.03)',
-                borderRadius: '14px', padding: '18px', cursor: 'pointer',
-                border: isSelected ? '2px solid #f97316' : isRec ? '2px solid rgba(249,115,22,0.4)' : '1px solid rgba(255,255,255,0.06)',
-                transition: 'all 0.2s', position: 'relative',
-              }}>
-                {isRec && (
-                  <div style={{ position: 'absolute', top: '-8px', right: '8px', background: 'linear-gradient(135deg, #f97316, #eab308)', color: '#fff', fontSize: '0.55rem', fontWeight: '700', padding: '2px 8px', borderRadius: '4px', textTransform: 'uppercase' }}>Best Fit</div>
-                )}
-                <div style={{ fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '1px', color: isSelected ? '#f97316' : '#8b8ba7', marginBottom: '4px', fontWeight: '600' }}>{opt.name}</div>
-                <div style={{ fontSize: '0.7rem', color: '#666', marginBottom: '10px' }}>{fmtPctWhole(opt.dpPct * 100)} down</div>
-                <div style={{ fontSize: '1.4rem', fontWeight: '700', color: '#fff', marginBottom: '6px' }}>{fmt$(opt.maxPrice)}</div>
-                <div style={{ fontSize: '0.8rem', color: '#b0b0c0', marginBottom: '6px' }}>{fmt$(opt.monthlyPITI)}/mo</div>
-                {/* Take-home heat bar */}
-                <div style={{ background: 'rgba(0,0,0,0.3)', borderRadius: '4px', height: '6px', marginBottom: '6px', overflow: 'hidden' }}>
-                  <div style={{ width: `${barWidth}%`, height: '100%', borderRadius: '4px', background: takeHomeColor(thPct) }} />
+        {/* Selected Scenario Detail Card */}
+        {selected && selected.maxPrice > 0 && (
+          <div className="hpo-card" style={s.card}>
+            <h3 style={{ ...s.section, marginTop: 0 }}>{(affSelectedDpPct * 100).toFixed(0)}% Down · {(affTargetComfort * 100).toFixed(0)}% of Take-Home</h3>
+
+            <div className="hpo-deep-dive-metrics" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '20px' }}>
+              {[
+                { label: 'Max Home Price', value: fmt$(selected.maxPrice), color: '#fff' },
+                { label: 'Cash Needed', value: fmt$(selected.cashNeeded), color: '#fff' },
+                { label: 'Savings After', value: fmt$(selected.remaining), color: selected.remaining >= 0 ? '#4ade80' : '#f87171' },
+                { label: 'Buffer Runway', value: selected.bufferMonths > 0 ? `${Math.floor(selected.bufferMonths)} months` : '—', color: selected.bufferMonths >= 12 ? '#4ade80' : selected.bufferMonths >= 6 ? '#fbbf24' : '#f87171' },
+              ].map((item, i) => (
+                <div key={i} style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '10px', padding: '14px', textAlign: 'center' }}>
+                  <div style={{ fontSize: '0.7rem', color: '#8b8ba7', textTransform: 'uppercase', marginBottom: '4px' }}>{item.label}</div>
+                  <div style={{ fontSize: '1.15rem', fontWeight: '700', color: item.color }}>{item.value}</div>
                 </div>
-                <div style={{ fontSize: '0.7rem', color: takeHomeColor(thPct), marginBottom: '2px' }}>{fmtPctWhole(thPct * 100)} of take-home</div>
-                <div style={{ fontSize: '0.6rem', color: comfortLevel(thPct).color, fontWeight: '600' }}>{comfortLevel(thPct).label}</div>
-                {opt.limitedBy === 'savings' && opt.maxPriceByIncome > opt.maxPrice && (
-                  <div style={{ fontSize: '0.6rem', color: '#a78bfa', marginTop: '2px' }}>Income supports {fmt$(opt.maxPriceByIncome)}</div>
-                )}
-              </div>
-            );
-          })}
-        </div>
+              ))}
+            </div>
 
-        {/* Section C: Selected Option Deep Dive */}
-        <div className="hpo-card" style={s.card}>
-          <h3 style={{ ...s.section, marginTop: 0 }}>{selected.name} — {fmtPctWhole(selected.dpPct * 100)} Down Payment</h3>
-          <p style={{ fontSize: '0.85rem', color: '#8b8ba7', marginBottom: '16px' }}>{selected.desc}</p>
-
-          <div className="hpo-deep-dive-metrics" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '20px' }}>
-            {[
-              { label: 'Max Home Price', value: fmt$(selected.maxPrice), color: '#fff' },
-              { label: 'Cash Needed', value: fmt$(selected.cashNeeded), color: '#fff' },
-              { label: 'Savings After', value: fmt$(selected.remaining), color: selected.remaining >= 0 ? '#4ade80' : '#f87171' },
-              { label: 'Buffer Runway', value: selected.bufferMonths > 0 ? `${Math.floor(selected.bufferMonths)} months` : '—', color: selected.bufferMonths >= 12 ? '#4ade80' : selected.bufferMonths >= 6 ? '#fbbf24' : '#f87171' },
-            ].map((item, i) => (
-              <div key={i} style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '10px', padding: '14px', textAlign: 'center' }}>
-                <div style={{ fontSize: '0.7rem', color: '#8b8ba7', textTransform: 'uppercase', marginBottom: '4px' }}>{item.label}</div>
-                <div style={{ fontSize: '1.15rem', fontWeight: '700', color: item.color }}>{item.value}</div>
-              </div>
-            ))}
-          </div>
-
-          {/* Monthly Breakdown */}
-          {selected.maxPrice > 0 && (
+            {/* Monthly Breakdown */}
             <>
               <h4 style={{ fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '1px', color: '#8b8ba7', marginBottom: '12px' }}>Monthly Payment Breakdown</h4>
               <div className="hpo-monthly-breakdown" style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '10px', marginBottom: '14px' }}>
@@ -4216,10 +4130,8 @@ export default function HomePurchaseOptimizer() {
                 );
               })()}
             </>
-          )}
 
-          {/* Context comparisons */}
-          {selected.maxPrice > 0 && (
+            {/* Context comparisons */}
             <div style={{ background: 'rgba(0,0,0,0.15)', borderRadius: '10px', padding: '16px', marginBottom: '16px' }}>
               <div style={{ display: 'grid', gap: '10px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -4230,7 +4142,7 @@ export default function HomePurchaseOptimizer() {
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ fontSize: '0.85rem', color: '#8b8ba7' }}>Share of Take-Home (~{fmt$(monthlyTakeHome)}/mo)</span>
-                  <span style={{ fontSize: '0.95rem', fontWeight: '600', color: takeHomeColor(selected.takeHomePct) }}>
+                  <span style={{ fontSize: '0.95rem', fontWeight: '600', color: comfortLevel(selected.takeHomePct).color }}>
                     {fmtPctWhole(selected.takeHomePct * 100)}
                   </span>
                 </div>
@@ -4251,7 +4163,6 @@ export default function HomePurchaseOptimizer() {
                         <span style={{ fontSize: '0.75rem', color: '#8b8ba7', textTransform: 'uppercase', letterSpacing: '1px' }}>Housing Comfort Level</span>
                         <span style={{ fontSize: '0.85rem', fontWeight: '700', color: cl.color }}>{cl.label}</span>
                       </div>
-                      {/* Gauge bar */}
                       <div style={{ position: 'relative', height: '12px', borderRadius: '6px', overflow: 'hidden', display: 'flex' }}>
                         {tiers.map((t, i) => {
                           const prev = i === 0 ? 0 : tiers[i - 1].end;
@@ -4259,13 +4170,11 @@ export default function HomePurchaseOptimizer() {
                         })}
                         <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', width: `${pctClamped * 100}%`, borderRadius: '6px', background: cl.color, transition: 'width 0.3s' }} />
                       </div>
-                      {/* Scale labels */}
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '4px' }}>
                         {['0%', '25%', '50%', '75%', '100%'].map((l, i) => (
                           <span key={i} style={{ fontSize: '0.6rem', color: '#666' }}>{l}</span>
                         ))}
                       </div>
-                      {/* Tier labels */}
                       <div style={{ display: 'flex', marginTop: '2px' }}>
                         {tiers.map((t, i) => {
                           const prev = i === 0 ? 0 : tiers[i - 1].end;
@@ -4278,14 +4187,10 @@ export default function HomePurchaseOptimizer() {
                 })()}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ fontSize: '0.85rem', color: '#8b8ba7' }}>
-                    {selected.limitedBy === 'savings'
-                      ? 'Your income supports up to'
-                      : 'Your savings support up to'}
+                    {selected.limitedBy === 'savings' ? 'Your income supports up to' : 'Your savings support up to'}
                   </span>
                   <span style={{ fontSize: '0.95rem', fontWeight: '600', color: '#8b8ba7' }}>
-                    {selected.limitedBy === 'savings'
-                      ? fmt$(selected.maxPriceByIncome)
-                      : fmt$(totalSavings - minBuffer)}
+                    {selected.limitedBy === 'savings' ? fmt$(selected.maxPriceByIncome) : fmt$(totalSavings - minBuffer)}
                   </span>
                 </div>
                 {selected.limitedBy === 'savings' && (
@@ -4300,23 +4205,38 @@ export default function HomePurchaseOptimizer() {
                 )}
               </div>
             </div>
-          )}
 
-          {selected.maxPrice > 0 && (
-            <button onClick={() => { setHomePrice(selected.maxPrice); setActiveTab('optimize'); }} style={{
-              width: '100%', padding: '14px', borderRadius: '10px', border: 'none', cursor: 'pointer', fontSize: '1rem', fontWeight: '600',
-              background: 'linear-gradient(135deg, #f97316, #eab308)', color: '#fff',
-            }}>Use {fmt$(selected.maxPrice)} as Home Price</button>
-          )}
+            {/* CTA: Find Best Strategy */}
+            <button onClick={() => { setHomePrice(selected.maxPrice); handleOptimize(selected.maxPrice); }} style={{
+              width: '100%', padding: '16px', borderRadius: '12px', border: 'none', cursor: 'pointer', fontSize: '1.05rem', fontWeight: '600',
+              background: 'linear-gradient(135deg, #22c55e, #16a34a)', color: '#fff',
+            }}>Find Best Strategy for {fmt$(selected.maxPrice)}</button>
+            <div style={{ fontSize: '0.75rem', color: '#8b8ba7', marginTop: '8px', textAlign: 'center' }}>Tests hundreds of combinations to find your optimal financing approach</div>
+          </div>
+        )}
+
+        {/* Additional Monthly Costs */}
+        <div className="hpo-card" style={s.card}>
+          <h3 style={{ ...s.section, marginTop: 0 }}>Additional Monthly Costs</h3>
+          <div className="hpo-two-col" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+            <div style={s.inputGroup}>
+              <label style={s.label}>Monthly HOA</label>
+              <CurrencyInput value={affMonthlyHOA} onChange={setAffMonthlyHOA} min={0} max={5000} style={s.input} />
+            </div>
+            <div style={s.inputGroup}>
+              <label style={s.label}>Other Monthly Debt (car, student loans, etc.)</label>
+              <CurrencyInput value={affMonthlyOtherDebt} onChange={setAffMonthlyOtherDebt} min={0} max={50000} style={s.input} />
+            </div>
+          </div>
         </div>
 
-        {/* Section D: Assumptions */}
+        {/* How This Works */}
         <div className="hpo-card" style={{ ...s.card, background: 'rgba(255,255,255,0.02)' }}>
           <h3 style={{ ...s.section, marginTop: 0 }}>How This Works</h3>
           <div style={{ fontSize: '0.82rem', color: '#8b8ba7', lineHeight: '1.7' }}>
-            <p style={{ marginBottom: '10px' }}>For each down payment level, we find the maximum home price limited by whichever binds first:</p>
+            <p style={{ marginBottom: '10px' }}>For each cell, we find the maximum home price limited by whichever binds first:</p>
             <div style={{ padding: '10px 16px', background: 'rgba(0,0,0,0.15)', borderRadius: '8px', marginBottom: '10px' }}>
-              <strong style={{ color: '#fbbf24' }}>Income:</strong> Monthly housing cost (PITI: principal, interest, taxes, insurance + HOA) cannot exceed 43% of gross income — the max most lenders approve.
+              <strong style={{ color: '#fbbf24' }}>Income:</strong> Monthly housing cost (PITI + HOA) cannot exceed the column's % of take-home pay, capped at 43% DTI.
             </div>
             <div style={{ padding: '10px 16px', background: 'rgba(0,0,0,0.15)', borderRadius: '8px', marginBottom: '10px' }}>
               <strong style={{ color: '#a78bfa' }}>Savings:</strong> Down payment + closing costs cannot exceed your savings minus {fmt$(minBuffer)} buffer.
@@ -4324,18 +4244,15 @@ export default function HomePurchaseOptimizer() {
             <div className="hpo-two-col" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 24px', marginTop: '12px' }}>
               <div>Property Tax: {fmtPct(loc.propTaxRate)} ({loc.shortLabel} avg)</div>
               <div>Insurance: {fmtPct(loc.insuranceRate)} of home price</div>
-              <div>PMI (private mortgage insurance): {fmtPct(loc.pmiRate)}/yr of loan (if {'<'}20% down)</div>
+              <div>PMI: {fmtPct(loc.pmiRate)}/yr of loan (if {'<'}20% down)</div>
               <div>Loan: {loanTerm}yr at {mortgageRate}%</div>
-              <div>Take-home est: ~{fmtPctWhole((1 - estEffectiveTaxRate) * 100)} of gross</div>
+              <div>Take-home: ~{fmtPctWhole((1 - estEffectiveTaxRate) * 100)} of gross</div>
               <div>Closing: ~{fmtPct(loc.closeBuy)} + transfer tax</div>
             </div>
-            <p style={{ marginTop: '10px', fontStyle: 'italic', fontSize: '0.8rem' }}>
-              Tax benefits from mortgage interest are not included — see the Taxes tab.
-            </p>
           </div>
         </div>
 
-        {/* Share affordability results */}
+        {/* Share buttons */}
         <div className="hpo-share-btns" style={{ display: 'flex', gap: '10px', justifyContent: 'center', marginBottom: '24px' }}>
           <button
             onClick={copyAffordabilitySummary}
@@ -4362,21 +4279,6 @@ export default function HomePurchaseOptimizer() {
             {linkCopied ? '✓ Copied!' : '🔗 Share Link'}
           </button>
         </div>
-
-        {/* Bridge CTA: Affordability → Best Strategy */}
-        {recommended && recommended.maxPrice > 0 && (
-          <div className="hpo-card" style={{ ...s.card, background: 'linear-gradient(135deg, rgba(34,197,94,0.12), rgba(16,185,129,0.08))', border: '2px solid rgba(34,197,94,0.3)', textAlign: 'center' }}>
-            <div style={{ fontSize: '0.75rem', color: '#8b8ba7', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>Next Step</div>
-            <div style={{ fontSize: '1.1rem', color: '#fff', marginBottom: '12px', lineHeight: '1.6' }}>
-              Now that you know your range, find the <strong style={{ color: '#4ade80' }}>best down payment and financing strategy</strong> for your situation.
-            </div>
-            <button onClick={() => { if (recommended) setHomePrice(recommended.maxPrice); handleOptimize(); setActiveTab('optimize'); }} style={{
-              padding: '14px 32px', borderRadius: '10px', border: 'none', cursor: 'pointer', fontSize: '1rem', fontWeight: '600',
-              background: 'linear-gradient(135deg, #22c55e, #16a34a)', color: '#fff',
-            }}>Find Best Strategy for {fmt$(recommended.maxPrice)}</button>
-            <div style={{ fontSize: '0.75rem', color: '#8b8ba7', marginTop: '8px' }}>Tests hundreds of combinations to find your optimal approach</div>
-          </div>
-        )}
       </>
     );
   };
@@ -4604,17 +4506,32 @@ export default function HomePurchaseOptimizer() {
               ))}
             </select>
           </div>
+          {isExpertMode && (
+            <div style={s.inputGroup}>
+              <label style={s.label}>Target Home Price</label>
+              <div style={{ fontSize: '0.7rem', color: '#8b8ba7', marginTop: '-2px', marginBottom: '4px' }}>Use "What Can I Buy?" tab if unsure</div>
+              <CurrencyInput
+                style={s.input}
+                value={homePrice}
+                onChange={setHomePrice}
+                min={100000}
+                max={50000000}
+                error={validationErrors.homePrice}
+                onValidate={(valid, err) => setFieldError('homePrice', err)}
+              />
+            </div>
+          )}
           <div style={s.inputGroup}>
-            <label style={s.label}>Target Home Price</label>
-            <div style={{ fontSize: '0.7rem', color: '#8b8ba7', marginTop: '-2px', marginBottom: '4px' }}>Use "What Can I Buy?" tab if unsure</div>
+            <label style={s.label}>Gross Income</label>
+            <div style={{ fontSize: '0.7rem', color: '#8b8ba7', marginTop: '-2px', marginBottom: '4px' }}>Before taxes — used for DTI ratio and take-home</div>
             <CurrencyInput
               style={s.input}
-              value={homePrice}
-              onChange={setHomePrice}
-              min={100000}
+              value={grossIncome}
+              onChange={setGrossIncome}
+              min={1}
               max={50000000}
-              error={validationErrors.homePrice}
-              onValidate={(valid, err) => setFieldError('homePrice', err)}
+              error={validationErrors.grossIncome}
+              onValidate={(valid, err) => setFieldError('grossIncome', err)}
             />
           </div>
           <div style={s.inputGroup}>
@@ -4630,32 +4547,21 @@ export default function HomePurchaseOptimizer() {
               onValidate={(valid, err) => setFieldError('totalSavings', err)}
             />
           </div>
-          <div style={s.inputGroup}>
-            <label style={s.label}>Gross Income</label>
-            <div style={{ fontSize: '0.7rem', color: '#8b8ba7', marginTop: '-2px', marginBottom: '4px' }}>Before taxes — used for DTI ratio and take-home</div>
-            <CurrencyInput
-              style={s.input}
-              value={grossIncome}
-              onChange={setGrossIncome}
-              min={1}
-              max={50000000}
-              error={validationErrors.grossIncome}
-              onValidate={(valid, err) => setFieldError('grossIncome', err)}
-            />
-          </div>
-          <div style={s.inputGroup}>
-            <label style={s.label}>Monthly Rent</label>
-            <div style={{ fontSize: '0.7rem', color: '#8b8ba7', marginTop: '-2px', marginBottom: '4px' }}>Current rent — used to compare owning vs renting</div>
-            <CurrencyInput
-              style={s.input}
-              value={monthlyRent}
-              onChange={setMonthlyRent}
-              min={0}
-              max={100000}
-              error={validationErrors.monthlyRent}
-              onValidate={(valid, err) => setFieldError('monthlyRent', err)}
-            />
-          </div>
+          {isExpertMode && (
+            <div style={s.inputGroup}>
+              <label style={s.label}>Monthly Rent</label>
+              <div style={{ fontSize: '0.7rem', color: '#8b8ba7', marginTop: '-2px', marginBottom: '4px' }}>Current rent — used to compare owning vs renting</div>
+              <CurrencyInput
+                style={s.input}
+                value={monthlyRent}
+                onChange={setMonthlyRent}
+                min={0}
+                max={100000}
+                error={validationErrors.monthlyRent}
+                onValidate={(valid, err) => setFieldError('monthlyRent', err)}
+              />
+            </div>
+          )}
           <div style={s.inputGroup}>
             <label style={s.label}>Filing Status</label>
             <div style={{ fontSize: '0.7rem', color: '#8b8ba7', marginTop: '-2px', marginBottom: '4px' }}>Affects tax brackets and take-home pay</div>
@@ -4819,32 +4725,36 @@ export default function HomePurchaseOptimizer() {
           </div>
           </>)}
 
-          <button
-            style={{
-              ...s.btn,
-              opacity: isFormValid ? 1 : 0.5,
-              cursor: isFormValid ? 'pointer' : 'not-allowed'
-            }}
-            onClick={handleOptimize}
-            disabled={!isFormValid}
-          >
-            🚀 Run Optimization
-          </button>
-          {!isFormValid && (
-            <div style={{ 
-              marginTop: '8px', 
-              padding: '10px 12px', 
-              background: 'rgba(248,113,113,0.1)', 
-              border: '1px solid rgba(248,113,113,0.3)', 
-              borderRadius: '8px',
-              fontSize: '0.8rem',
-              color: '#f87171',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px'
-            }}>
-              <span>⚠</span> Please fix validation errors above before running optimization
-            </div>
+          {isExpertMode && (
+            <>
+              <button
+                style={{
+                  ...s.btn,
+                  opacity: isFormValid ? 1 : 0.5,
+                  cursor: isFormValid ? 'pointer' : 'not-allowed'
+                }}
+                onClick={handleOptimize}
+                disabled={!isFormValid}
+              >
+                🚀 Run Optimization
+              </button>
+              {!isFormValid && (
+                <div style={{
+                  marginTop: '8px',
+                  padding: '10px 12px',
+                  background: 'rgba(248,113,113,0.1)',
+                  border: '1px solid rgba(248,113,113,0.3)',
+                  borderRadius: '8px',
+                  fontSize: '0.8rem',
+                  color: '#f87171',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}>
+                  <span>⚠</span> Please fix validation errors above before running optimization
+                </div>
+              )}
+            </>
           )}
         </aside>
         
