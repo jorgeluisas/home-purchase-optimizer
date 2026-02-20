@@ -337,8 +337,11 @@ export default function HomePurchaseOptimizer() {
   // Preset state
   const [activePreset, setActivePreset] = useState(null);
 
-  // Expert/Quick Mode state
-  const [isExpertMode, setIsExpertMode] = useState(false);
+  // App mode state: 'explore' | 'target' | 'deep'
+  const [appMode, setAppMode] = useState('explore');
+  const isExploreMode = appMode === 'explore';
+  const isTargetMode = appMode === 'target';
+  const isDeepMode = appMode === 'deep';
   const [showAdvancedInputs, setShowAdvancedInputs] = useState(false);
 
   // Custom assumptions state (editable location-specific constants)
@@ -491,6 +494,7 @@ export default function HomePurchaseOptimizer() {
     manualHelocPct: setManualHelocPct,
     activeTab: setActiveTab,
     location: setSelectedLocation,
+    appMode: setAppMode,
   }), []);
 
   // Hydrate state from URL on mount
@@ -505,7 +509,7 @@ export default function HomePurchaseOptimizer() {
       const stateKey = REVERSE_URL_MAP[shortKey];
       if (!stateKey || !stateSetters[stateKey]) return;
 
-      if (stateKey === 'filingStatus' || stateKey === 'activeTab' || stateKey === 'location') {
+      if (stateKey === 'filingStatus' || stateKey === 'activeTab' || stateKey === 'location' || stateKey === 'appMode') {
         stateSetters[stateKey](value);
       } else {
         const num = parseFloat(value);
@@ -519,11 +523,11 @@ export default function HomePurchaseOptimizer() {
     homePrice, totalSavings, stockPortfolio, grossIncome, monthlyRent, rentGrowth,
     filingStatus, mortgageRate, marginRate, helocRate, cashOutRefiRate,
     investmentReturn, dividendYield, homeAppreciation, loanTerm, minBuffer,
-    manualDpPct, manualMarginPct, manualHelocPct, activeTab, location: selectedLocation
+    manualDpPct, manualMarginPct, manualHelocPct, activeTab, location: selectedLocation, appMode
   }), [homePrice, totalSavings, stockPortfolio, grossIncome, monthlyRent, rentGrowth,
       filingStatus, mortgageRate, marginRate, helocRate, cashOutRefiRate,
       investmentReturn, dividendYield, homeAppreciation, loanTerm, minBuffer,
-      manualDpPct, manualMarginPct, manualHelocPct, activeTab, selectedLocation]);
+      manualDpPct, manualMarginPct, manualHelocPct, activeTab, selectedLocation, appMode]);
 
   // Default values for comparison (only include non-default in URL)
   const defaults = useMemo(() => ({
@@ -532,7 +536,7 @@ export default function HomePurchaseOptimizer() {
     filingStatus: 'married', mortgageRate: 6.5, marginRate: 6.5,
     helocRate: 8.5, cashOutRefiRate: 6.75, investmentReturn: 8,
     dividendYield: 2, homeAppreciation: 5, loanTerm: 30, minBuffer: 0,
-    manualDpPct: 30, manualMarginPct: 0, manualHelocPct: 0, activeTab: 'optimize', location: 'sf'
+    manualDpPct: 30, manualMarginPct: 0, manualHelocPct: 0, activeTab: 'afford', location: 'sf', appMode: 'explore'
   }), []);
 
   // Update URL when state changes (debounced)
@@ -558,6 +562,16 @@ export default function HomePurchaseOptimizer() {
 
     return () => clearTimeout(timeoutId);
   }, [currentState, defaults]);
+
+  // Correct activeTab when switching modes
+  useEffect(() => {
+    if (isExploreMode && activeTab !== 'afford' && !(activeTab === 'optimize' && optimizationResult)) {
+      setActiveTab('afford');
+    }
+    if (isTargetMode && activeTab !== 'optimize') {
+      setActiveTab('optimize');
+    }
+  }, [appMode]);
 
   // Copy shareable link
   const copyShareLink = useCallback(() => {
@@ -1269,7 +1283,7 @@ export default function HomePurchaseOptimizer() {
     const top5 = optimizationResult?.topFive || [];
     const diag = optimizationResult?.diagnostics;
     
-    if (!opt && !isExpertMode) {
+    if (!opt && isExploreMode) {
       return (
         <div style={{ textAlign: 'center', padding: '60px 40px' }}>
           <div style={{ fontSize: '3rem', marginBottom: '16px' }}>👈</div>
@@ -1418,6 +1432,18 @@ export default function HomePurchaseOptimizer() {
 
     return (
       <>
+        {/* Back-to-matrix breadcrumb in explore mode */}
+        {isExploreMode && (
+          <button
+            onClick={() => setActiveTab('afford')}
+            style={{
+              background: 'none', border: 'none', color: '#22c55e', cursor: 'pointer',
+              fontSize: '0.85rem', fontWeight: '500', padding: '0 0 16px', display: 'flex', alignItems: 'center', gap: '6px'
+            }}
+          >
+            ← Back to What Can I Buy?
+          </button>
+        )}
         {/* QUICK VERDICT - The Answer at a Glance */}
         <div style={{
           background: `linear-gradient(135deg, ${verdict.color}15, ${verdict.color}08)`,
@@ -1558,7 +1584,7 @@ export default function HomePurchaseOptimizer() {
         </div>
 
         {/* Cross-tab navigation */}
-        {isExpertMode ? (
+        {isDeepMode ? (
           <div style={{ display: 'flex', justifyContent: 'center', gap: '24px', marginBottom: '24px', flexWrap: 'wrap' }}>
             <button onClick={() => setActiveTab('holding')} style={{ background: 'none', border: 'none', color: '#60a5fa', cursor: 'pointer', fontSize: '0.82rem', padding: 0 }}>
               See year-by-year breakdown →
@@ -1573,10 +1599,10 @@ export default function HomePurchaseOptimizer() {
         ) : (
           <div style={{ textAlign: 'center', marginBottom: '24px' }}>
             <button
-              onClick={() => setIsExpertMode(true)}
+              onClick={() => setAppMode('deep')}
               style={{ background: 'none', border: 'none', color: '#a78bfa', cursor: 'pointer', fontSize: '0.82rem', padding: 0 }}
             >
-              Switch to Expert Mode for year-by-year analysis, sensitivity testing, and tax breakdown →
+              Switch to Deep Analysis for year-by-year analysis, sensitivity testing, and tax breakdown →
             </button>
           </div>
         )}
@@ -4345,6 +4371,9 @@ export default function HomePurchaseOptimizer() {
 
         /* ========== MOBILE (600px) ========== */
         @media (max-width: 600px) {
+          /* Mode toggle */
+          .hpo-mode-toggle { gap: 3px !important; padding: 3px !important; }
+          .hpo-mode-toggle button { padding: 8px 4px !important; font-size: 0.65rem !important; }
           /* Layout */
           .hpo-container { padding: 12px !important; }
           .hpo-panel { padding: 16px !important; max-height: none !important; }
@@ -4407,6 +4436,8 @@ export default function HomePurchaseOptimizer() {
 
         /* ========== EXTRA SMALL (400px) ========== */
         @media (max-width: 400px) {
+          .hpo-mode-toggle button { padding: 7px 3px !important; font-size: 0.6rem !important; }
+          .hpo-mode-toggle button span { font-size: 0.85rem !important; }
           .hpo-container { padding: 8px !important; }
           .hpo-title { font-size: 1.5rem !important; }
           .hpo-card { padding: 12px !important; }
@@ -4445,55 +4476,43 @@ export default function HomePurchaseOptimizer() {
           >
             {linkCopied ? '✓ Copied!' : '🔗 Copy Link'}
           </button>
-          
-          {/* Expert/Quick Mode Toggle */}
-          <div style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '0',
-            background: 'rgba(255,255,255,0.05)',
-            borderRadius: '20px',
-            padding: '3px',
-            border: '1px solid rgba(255,255,255,0.1)'
-          }}>
-            <button
-              onClick={() => { setIsExpertMode(false); setActiveTab('afford'); }}
-              style={{
-                padding: '6px 14px',
-                borderRadius: '18px',
-                border: 'none',
-                fontSize: '0.8rem',
-                fontWeight: '500',
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-                background: !isExpertMode ? 'linear-gradient(135deg, #22c55e, #16a34a)' : 'transparent',
-                color: !isExpertMode ? '#fff' : '#8b8ba7'
-              }}
-            >
-              🎯 Quick
-            </button>
-            <button
-              onClick={() => setIsExpertMode(true)}
-              style={{
-                padding: '6px 14px',
-                borderRadius: '18px',
-                border: 'none',
-                fontSize: '0.8rem',
-                fontWeight: '500',
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-                background: isExpertMode ? 'linear-gradient(135deg, #a78bfa, #8b5cf6)' : 'transparent',
-                color: isExpertMode ? '#fff' : '#8b8ba7'
-              }}
-            >
-              🔬 Expert
-            </button>
-          </div>
         </div>
       </header>
       
       <div style={s.grid} className="hpo-grid">
         <aside className="hpo-panel" style={s.panel}>
+          {/* 3-way Mode Toggle */}
+          <div className="hpo-mode-toggle" style={{
+            display: 'flex', gap: '4px', padding: '4px',
+            background: 'rgba(255,255,255,0.05)', borderRadius: '12px',
+            border: '1px solid rgba(255,255,255,0.1)', marginBottom: '12px'
+          }}>
+            {[
+              { mode: 'explore', label: 'What Can I Buy?', icon: '🔍', color: '#22c55e', grad: 'linear-gradient(135deg, #22c55e, #16a34a)' },
+              { mode: 'target', label: 'I Have a Target', icon: '🎯', color: '#f97316', grad: 'linear-gradient(135deg, #f97316, #ea580c)' },
+              { mode: 'deep', label: 'Deep Analysis', icon: '🔬', color: '#a78bfa', grad: 'linear-gradient(135deg, #a78bfa, #8b5cf6)' },
+            ].map(m => (
+              <button
+                key={m.mode}
+                onClick={() => { setAppMode(m.mode); if (m.mode === 'explore') setActiveTab('afford'); if (m.mode === 'target') setActiveTab('optimize'); }}
+                style={{
+                  flex: 1, padding: '10px 6px', borderRadius: '9px', border: 'none',
+                  fontSize: '0.72rem', fontWeight: '600', cursor: 'pointer', transition: 'all 0.2s',
+                  background: appMode === m.mode ? m.grad : 'transparent',
+                  color: appMode === m.mode ? '#fff' : '#8b8ba7',
+                  lineHeight: '1.3'
+                }}
+              >
+                <span style={{ display: 'block', fontSize: '1rem', marginBottom: '2px' }}>{m.icon}</span>
+                {m.label}
+              </button>
+            ))}
+          </div>
+          <div style={{ fontSize: '0.72rem', color: '#8b8ba7', textAlign: 'center', marginBottom: '16px', fontStyle: 'italic' }}>
+            {isExploreMode && 'Discover what you can afford, then find the best strategy.'}
+            {isTargetMode && 'Enter your target price and get the optimal financing strategy.'}
+            {isDeepMode && 'Full access to all inputs, tabs, and analysis tools.'}
+          </div>
           <h3 style={{ ...s.section, marginTop: 0 }}>Your Situation</h3>
           <div style={s.inputGroup}>
             <label style={s.label}>Location</label>
@@ -4506,7 +4525,7 @@ export default function HomePurchaseOptimizer() {
               ))}
             </select>
           </div>
-          {isExpertMode && (
+          {(isTargetMode || isDeepMode) && (
             <div style={s.inputGroup}>
               <label style={s.label}>Target Home Price</label>
               <div style={{ fontSize: '0.7rem', color: '#8b8ba7', marginTop: '-2px', marginBottom: '4px' }}>Use "What Can I Buy?" tab if unsure</div>
@@ -4547,7 +4566,7 @@ export default function HomePurchaseOptimizer() {
               onValidate={(valid, err) => setFieldError('totalSavings', err)}
             />
           </div>
-          {isExpertMode && (
+          {(isTargetMode || isDeepMode) && (
             <div style={s.inputGroup}>
               <label style={s.label}>Monthly Rent</label>
               <div style={{ fontSize: '0.7rem', color: '#8b8ba7', marginTop: '-2px', marginBottom: '4px' }}>Current rent — used to compare owning vs renting</div>
@@ -4725,7 +4744,7 @@ export default function HomePurchaseOptimizer() {
           </div>
           </>)}
 
-          {isExpertMode && (
+          {(isTargetMode || isDeepMode) && (
             <>
               <button
                 style={{
@@ -4759,49 +4778,17 @@ export default function HomePurchaseOptimizer() {
         </aside>
         
         <main>
-          {/* Quick Mode Banner */}
-          {!isExpertMode && (
-            <div style={{
-              background: 'linear-gradient(135deg, rgba(34,197,94,0.15), rgba(22,163,74,0.1))',
-              border: '1px solid rgba(34,197,94,0.3)',
-              borderRadius: '12px',
-              padding: '16px 20px',
-              marginBottom: '20px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: '16px'
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <span style={{ fontSize: '1.5rem' }}>🎯</span>
-                <div>
-                  <div style={{ color: '#22c55e', fontWeight: '600', fontSize: '0.95rem' }}>Quick Mode</div>
-                  <div style={{ color: '#a0a0b0', fontSize: '0.8rem' }}>Start with what you can afford, then get your best strategy. Switch to Expert for deep analysis.</div>
-                </div>
-              </div>
-              <button
-                onClick={() => setIsExpertMode(true)}
-                style={{
-                  padding: '8px 16px',
-                  borderRadius: '8px',
-                  border: '1px solid rgba(167,139,250,0.4)',
-                  background: 'rgba(167,139,250,0.1)',
-                  color: '#a78bfa',
-                  fontSize: '0.8rem',
-                  fontWeight: '500',
-                  cursor: 'pointer',
-                  whiteSpace: 'nowrap'
-                }}
-              >
-                🔬 Switch to Expert
-              </button>
-            </div>
-          )}
-
           <div style={s.tabs} className="hpo-tabs">
-            <button style={{ ...s.tab, ...(activeTab === 'afford' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('afford')}>What Can I Buy?</button>
-            <button style={{ ...s.tab, ...(activeTab === 'optimize' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('optimize')}>Best Strategy</button>
-            {isExpertMode && (
+            {(isExploreMode || isDeepMode) && (
+              <button style={{ ...s.tab, ...(activeTab === 'afford' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('afford')}>What Can I Buy?</button>
+            )}
+            {(isExploreMode && optimizationResult) && (
+              <button style={{ ...s.tab, ...(activeTab === 'optimize' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('optimize')}>Best Strategy</button>
+            )}
+            {(isTargetMode || isDeepMode) && (
+              <button style={{ ...s.tab, ...(activeTab === 'optimize' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('optimize')}>Best Strategy</button>
+            )}
+            {isDeepMode && (
               <>
                 <button style={{ ...s.tab, ...(activeTab === 'scenarios' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('scenarios')}>Side-by-Side</button>
                 <button style={{ ...s.tab, ...(activeTab === 'holding' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('holding')}>Own vs Rent</button>
@@ -4813,11 +4800,11 @@ export default function HomePurchaseOptimizer() {
           </div>
 
           {activeTab === 'optimize' && renderOptimize()}
-          {isExpertMode && activeTab === 'scenarios' && renderScenarios()}
-          {isExpertMode && activeTab === 'manual' && renderManual()}
-          {isExpertMode && activeTab === 'tax' && renderTax()}
-          {isExpertMode && activeTab === 'holding' && renderHolding()}
-          {isExpertMode && activeTab === 'sensitivity' && renderSensitivity()}
+          {isDeepMode && activeTab === 'scenarios' && renderScenarios()}
+          {isDeepMode && activeTab === 'manual' && renderManual()}
+          {isDeepMode && activeTab === 'tax' && renderTax()}
+          {isDeepMode && activeTab === 'holding' && renderHolding()}
+          {isDeepMode && activeTab === 'sensitivity' && renderSensitivity()}
           {activeTab === 'afford' && renderAffordability()}
         </main>
       </div>
