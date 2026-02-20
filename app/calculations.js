@@ -24,6 +24,7 @@ export const URL_PARAM_MAP = {
   activeTab: 'tab',
   location: 'loc',
   appMode: 'mode',
+  manualCashOutPct: 'mco',
 };
 
 // Reverse mapping for hydration
@@ -335,7 +336,10 @@ export const calcScenario = (params) => {
     mortgageTaxBenefit: -mortgageTaxBenefit,
     investInterestTaxBenefit: -investInterestTaxBenefit,
     totalTaxBenefit: -totalTaxBenefit,
-    netTotal: totalInterestAnnual + pmi.monthly * 12 + propTax + insurance + maintenance - totalTaxBenefit
+    netTotal: totalInterestAnnual + pmi.monthly * 12 + propTax + insurance + maintenance - totalTaxBenefit,
+    // Informational fields (not costs) — for explaining P&I vs interest gap
+    monthlyPI: amort.monthlyPayment,
+    monthlyPrincipal: amort.monthlyPayment - (acquisitionDebtInterest / 12),
   };
 
   // NIIT calculation
