@@ -23,6 +23,7 @@ export const URL_PARAM_MAP = {
   manualHelocPct: 'mhp',
   activeTab: 'tab',
   location: 'loc',
+  appMode: 'mode',
 };
 
 // Reverse mapping for hydration
