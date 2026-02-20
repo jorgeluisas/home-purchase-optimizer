@@ -2115,7 +2115,7 @@ export default function HomePurchaseOptimizer() {
 
           <div style={s.inputGroup}>
             <label style={s.label}>Cash-Out Refi: {manualCashOutPct}% of home ({fmt$(homePrice * manualCashOutPct / 100)})</label>
-            <input type="range" min="0" max="50" value={manualCashOutPct} onChange={e => { setManualCashOutPct(Number(e.target.value)); if (Number(e.target.value) > 0) setManualHelocPct(0); setActivePreset(null); }} style={s.slider} disabled={manualDpPct >= 100 || manualHelocPct > 0} />
+            <input type="range" min="0" max="100" value={manualCashOutPct} onChange={e => { setManualCashOutPct(Number(e.target.value)); if (Number(e.target.value) > 0) setManualHelocPct(0); setActivePreset(null); }} style={s.slider} disabled={manualDpPct >= 100 || manualHelocPct > 0} />
             {manualDpPct >= 100 && (
               <div style={{ color: '#8b8ba7', fontSize: '0.8rem', marginTop: '4px' }}>Disabled — cash-out refi requires a mortgage (down payment {'<'} 100%)</div>
             )}
@@ -2123,7 +2123,27 @@ export default function HomePurchaseOptimizer() {
               <div style={{ color: '#8b8ba7', fontSize: '0.8rem', marginTop: '4px' }}>Disabled — HELOC and cash-out refi are mutually exclusive</div>
             )}
             {sc.cashOutRefiAmount > 0 && (
-              <div style={{ color: '#4ade80', fontSize: '0.8rem', marginTop: '4px' }}>✓ Cash-out refi active: {fmt$(sc.cashOutRefiAmount)} — interest traceable as investment interest</div>
+              <div style={{ marginTop: '10px', padding: '12px', background: 'rgba(96,165,250,0.08)', borderRadius: '8px', border: '1px solid rgba(96,165,250,0.2)' }}>
+                <div style={{ color: '#60a5fa', fontSize: '0.85rem', fontWeight: '600', marginBottom: '8px' }}>How Cash-Out Refi Works</div>
+                <div style={{ fontSize: '0.8rem', color: '#c8c8d8', lineHeight: '1.5' }}>
+                  Instead of a regular {fmt$(sc.acquisitionDebt)} mortgage, you take a larger loan of {fmt$(sc.totalRefiLoan)} ({fmtPct((sc.totalRefiLoan / homePrice))} LTV).
+                  The extra {fmt$(sc.cashOutRefiAmount)} goes straight into your investment portfolio.
+                </div>
+                <div style={{ fontSize: '0.8rem', color: '#c8c8d8', lineHeight: '1.5', marginTop: '6px' }}>
+                  <strong style={{ color: '#4ade80' }}>Tax benefit:</strong> Because the cash-out proceeds are invested, the interest on that portion ({fmt$(sc.cashOutInterestAnnual)}/yr) qualifies for the <em>investment interest deduction</em> via interest tracing —
+                  deductible up to your net investment income ({fmt$(sc.totalDeductibleInvestmentIncome)}/yr from {fmtPct(sc.dividendYield)} dividend yield).
+                </div>
+                {sc.nonDeductibleCashOutInterest > 0 && (
+                  <div style={{ fontSize: '0.8rem', color: '#fbbf24', lineHeight: '1.5', marginTop: '6px' }}>
+                    ⚠️ {fmt$(sc.nonDeductibleCashOutInterest)}/yr of cash-out interest exceeds your investment income and is <strong>not deductible</strong>. Increase dividend yield or reduce cash-out to maximize the benefit.
+                  </div>
+                )}
+                {(sc.totalRefiLoan / homePrice) > 0.80 && (
+                  <div style={{ fontSize: '0.8rem', color: '#fbbf24', lineHeight: '1.5', marginTop: '6px' }}>
+                    ⚠️ LTV is {fmtPct(sc.totalRefiLoan / homePrice)} — most lenders cap cash-out refi at 80% LTV. You may need a portfolio lender or non-QM product.
+                  </div>
+                )}
+              </div>
             )}
           </div>
         </div>
@@ -2138,7 +2158,10 @@ export default function HomePurchaseOptimizer() {
           <div style={s.metric}><div style={s.metricVal}>{fmt$(sc.totalDown)}</div><div style={s.metricLbl}>Total Down</div></div>
           <div style={s.metric}><div style={s.metricVal}>{fmt$(sc.monthlyPayment)}</div><div style={s.metricLbl}>Monthly P&I</div></div>
           <div style={s.metric}><div style={{ ...s.metricVal, color: '#4ade80' }}>{fmtPct(sc.blendedEffectiveRate)}</div><div style={s.metricLbl}>Blended Eff. Rate</div></div>
-          <div style={s.metric}><div style={{ ...s.metricVal, color: manualRemaining < minBuffer ? '#f87171' : '#4ade80' }}>{fmt$(manualRemaining)}</div><div style={s.metricLbl}>Remaining</div></div>
+          <div style={s.metric}><div style={{ ...s.metricVal, color: manualRemaining < minBuffer ? '#f87171' : '#4ade80' }}>{fmt$(manualRemaining)}</div><div style={s.metricLbl}>Cash After Close</div></div>
+        </div>
+        <div style={{ fontSize: '0.75rem', color: '#8b8ba7', textAlign: 'center', marginTop: '-8px', marginBottom: '8px' }}>
+          Cash After Close = Savings ({fmt$(totalSavings)}) − Down Payment ({fmt$(sc.cashDown)}) − Closing Costs ({fmt$(sc.txCosts.buy)}){sc.cashOutRefiAmount > 0 ? ` + Cash-Out Proceeds (${fmt$(sc.cashOutRefiAmount)})` : ''}{sc.helocAmount > 0 ? ` + HELOC Proceeds (${fmt$(sc.helocAmount)})` : ''}
         </div>
         
         {/* Financing structure */}
@@ -2230,7 +2253,7 @@ export default function HomePurchaseOptimizer() {
             <div style={{ marginBottom: '20px' }}>
               <div style={{ fontSize: '0.85rem', fontWeight: '600', color: '#c084fc', marginBottom: '8px' }}>{loc.stateLabel} Mortgage Interest Deduction</div>
               <div style={s.costLine}><span style={{ color: '#8b8ba7' }}>Deductible mortgage interest:</span><span>{fmt$(sc.stateDeductibleMortgageInterest)}</span></div>
-              <div style={s.costLine}><span style={{ color: '#8b8ba7' }}>Property tax:</span><span>{fmt$(sc.propTaxAnnual)}</span></div>
+              <div style={s.costLine}><span style={{ color: '#8b8ba7' }}>Property tax:</span><span>{fmt$(sc.propTax)}</span></div>
               <div style={{ ...s.costLine, borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '6px', marginTop: '4px' }}>
                 <span style={{ color: '#8b8ba7' }}>State itemized:</span><span>{fmt$(sc.stateItemizedTotal)}</span>
               </div>
@@ -2279,11 +2302,85 @@ export default function HomePurchaseOptimizer() {
               <span style={{ fontWeight: '700', fontSize: '1.1rem', color: '#4ade80' }}>{fmt$(sc.totalTaxBenefit)}/yr</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', color: '#8b8ba7', marginTop: '4px' }}>
-              <span>Federal mortgage: {fmt$(sc.federalMortgageTaxBenefit)}{loc.hasStateIncomeTax ? ` + ${loc.stateLabel}: ${fmt$(sc.stateMortgageTaxBenefit)}` : ''}{sc.investInterestTaxBenefit > 0 ? ` + Interest tracing: ${fmt$(sc.investInterestTaxBenefit)}` : ''}</span>
+              <span>Federal mortgage: {fmt$(sc.federalMortgageTaxBenefit)}{loc.hasStateIncomeTax ? ` + ${loc.stateLabel} mortgage: ${fmt$(sc.stateMortgageTaxBenefit)}` : ''}{sc.investInterestTaxBenefit > 0 ? ` + Interest tracing: ${fmt$(sc.investInterestTaxBenefit)}` : ''}</span>
             </div>
           </div>
         </div>
-        
+
+        {/* Equity Build Analysis */}
+        <div className="hpo-card" style={s.card}>
+          <h3 style={{ ...s.section, marginTop: 0 }}>Equity & Wealth Build Over Time</h3>
+          <div style={{ fontSize: '0.85rem', color: '#8b8ba7', marginBottom: '16px' }}>
+            How your home equity grows through mortgage paydown and appreciation — the wealth you're building while you live there.
+          </div>
+
+          {/* Milestone table */}
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+              <thead>
+                <tr style={{ borderBottom: '2px solid rgba(255,255,255,0.15)' }}>
+                  <th style={{ textAlign: 'left', padding: '8px 6px', color: '#8b8ba7', fontWeight: '600' }}>Year</th>
+                  <th style={{ textAlign: 'right', padding: '8px 6px', color: '#8b8ba7', fontWeight: '600' }}>Home Value</th>
+                  <th style={{ textAlign: 'right', padding: '8px 6px', color: '#8b8ba7', fontWeight: '600' }}>Loan Balance</th>
+                  <th style={{ textAlign: 'right', padding: '8px 6px', color: '#8b8ba7', fontWeight: '600' }}>Equity</th>
+                  <th style={{ textAlign: 'right', padding: '8px 6px', color: '#8b8ba7', fontWeight: '600' }}>Principal Paid</th>
+                  <th style={{ textAlign: 'right', padding: '8px 6px', color: '#4ade80', fontWeight: '600' }}>Net Wealth</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[0, 4, 9, 14, 19, 29].map(idx => {
+                  const yr = sc.yearlyAnalysis[idx];
+                  if (!yr) return null;
+                  const cumulativePrincipal = sc.yearlyAnalysis.slice(0, idx + 1).reduce((sum, y) => sum + (y.yearlyPrincipal || 0), 0);
+                  const appreciationGain = yr.homeValue - homePrice;
+                  return (
+                    <tr key={yr.year} style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                      <td style={{ padding: '8px 6px', fontWeight: '600' }}>Year {yr.year}</td>
+                      <td style={{ textAlign: 'right', padding: '8px 6px' }}>{fmt$(yr.homeValue)}</td>
+                      <td style={{ textAlign: 'right', padding: '8px 6px', color: '#f87171' }}>{fmt$(yr.loanBalance)}</td>
+                      <td style={{ textAlign: 'right', padding: '8px 6px', color: '#60a5fa' }}>{fmt$(yr.equity)}</td>
+                      <td style={{ textAlign: 'right', padding: '8px 6px' }}>{fmt$(cumulativePrincipal)}</td>
+                      <td style={{ textAlign: 'right', padding: '8px 6px', color: '#4ade80', fontWeight: '600' }}>{fmt$(yr.ownerWealth)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Equity breakdown at year 30 */}
+          {sc.yearlyAnalysis[29] && (() => {
+            const yr30 = sc.yearlyAnalysis[29];
+            const totalPrincipalPaid = sc.yearlyAnalysis.reduce((sum, y) => sum + (y.yearlyPrincipal || 0), 0);
+            const appreciationGain = yr30.homeValue - homePrice;
+            const initialEquity = sc.totalDown;
+            return (
+              <div style={{ marginTop: '20px', padding: '16px', background: 'rgba(96,165,250,0.08)', borderRadius: '8px', border: '1px solid rgba(96,165,250,0.2)' }}>
+                <div style={{ fontSize: '0.85rem', fontWeight: '600', color: '#60a5fa', marginBottom: '10px' }}>30-Year Equity Breakdown</div>
+                <div style={s.costLine}><span style={{ color: '#8b8ba7' }}>Initial equity (down payment):</span><span>{fmt$(initialEquity)}</span></div>
+                <div style={s.costLine}><span style={{ color: '#8b8ba7' }}>Principal paid over 30 years:</span><span>{fmt$(totalPrincipalPaid)}</span></div>
+                <div style={s.costLine}><span style={{ color: '#8b8ba7' }}>Home appreciation gain:</span><span style={{ color: '#4ade80' }}>+{fmt$(appreciationGain)}</span></div>
+                {(sc.marginLoan > 0 || sc.helocAmount > 0) && (
+                  <div style={s.costLine}><span style={{ color: '#8b8ba7' }}>Less outstanding leverage:</span><span style={{ color: '#f87171' }}>−{fmt$(sc.marginLoan + sc.helocAmount)}</span></div>
+                )}
+                <div style={{ ...s.costLine, borderTop: '2px solid rgba(255,255,255,0.15)', paddingTop: '8px', marginTop: '6px', fontWeight: '700', fontSize: '1rem' }}>
+                  <span>Total equity at Year 30:</span>
+                  <span style={{ color: '#4ade80' }}>{fmt$(yr30.equity)}</span>
+                </div>
+                <div style={{ ...s.costLine, fontWeight: '600' }}>
+                  <span>Net wealth (after selling costs):</span>
+                  <span style={{ color: '#4ade80' }}>{fmt$(yr30.ownerWealth)}</span>
+                </div>
+                {sc.breakEvenYear !== 'Never' && (
+                  <div style={{ fontSize: '0.8rem', color: '#8b8ba7', marginTop: '8px' }}>
+                    Break-even vs. renting: Year {sc.breakEvenYear} · After 30 years, owning creates {fmt$(yr30.advantage)} more wealth than renting
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+        </div>
+
         {/* Edit Assumptions Section */}
         <div style={{
           ...s.card,
