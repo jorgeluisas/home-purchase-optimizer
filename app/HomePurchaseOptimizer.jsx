@@ -202,29 +202,31 @@ const SCENARIO_PRESETS = {
   conservative: {
     name: 'Conservative',
     emoji: '🛡️',
-    description: 'Lower leverage, higher safety margins, traditional financing',
+    description: 'Traditional financing, no leverage, maximum safety',
     color: '#4ade80',
     settings: {
       manualDpPct: 30,
       manualMarginPct: 0,
       manualHelocPct: 0,
-      mortgageRate: 7.0,    // Assume slightly higher rate
+      manualCashOutPct: 0,
+      mortgageRate: 7.0,
       marginRate: 7.0,
       helocRate: 9.0,
-      investmentReturn: 6,  // Conservative returns
-      homeAppreciation: 3,  // Conservative appreciation
+      investmentReturn: 6,
+      homeAppreciation: 3,
       rentGrowth: 3,
     }
   },
   balanced: {
     name: 'Balanced',
     emoji: '⚖️',
-    description: 'Moderate leverage, realistic assumptions, some optimization',
+    description: 'Moderate leverage, interest tracing via cash-out refi',
     color: '#60a5fa',
     settings: {
       manualDpPct: 25,
       manualMarginPct: 10,
       manualHelocPct: 0,
+      manualCashOutPct: 20,
       mortgageRate: 6.5,
       marginRate: 6.5,
       helocRate: 8.5,
@@ -236,17 +238,18 @@ const SCENARIO_PRESETS = {
   aggressive: {
     name: 'Aggressive',
     emoji: '🚀',
-    description: 'Maximum tax optimization, higher leverage, all tools utilized',
+    description: 'Maximum leverage, full interest tracing via HELOC',
     color: '#f97316',
     settings: {
       manualDpPct: 20,
       manualMarginPct: 20,
-      manualHelocPct: 50,   // Only applies if buying with cash
+      manualHelocPct: 50,
+      manualCashOutPct: 0,
       mortgageRate: 6.5,
-      marginRate: 6.0,      // Assume better rates
+      marginRate: 6.0,
       helocRate: 8.0,
-      investmentReturn: 10, // Optimistic returns
-      homeAppreciation: 6,  // Optimistic appreciation
+      investmentReturn: 10,
+      homeAppreciation: 6,
       rentGrowth: 4,
     }
   }
@@ -318,6 +321,7 @@ export default function HomePurchaseOptimizer() {
   const [manualDpPct, setManualDpPct] = useState(30);
   const [manualMarginPct, setManualMarginPct] = useState(0);
   const [manualHelocPct, setManualHelocPct] = useState(0);
+  const [manualCashOutPct, setManualCashOutPct] = useState(0);
 
   // Affordability tab state
   const [affMonthlyHOA, setAffMonthlyHOA] = useState(0);
@@ -415,6 +419,7 @@ export default function HomePurchaseOptimizer() {
     if (settings.manualDpPct !== undefined) setManualDpPct(settings.manualDpPct);
     if (settings.manualMarginPct !== undefined) setManualMarginPct(settings.manualMarginPct);
     if (settings.manualHelocPct !== undefined) setManualHelocPct(settings.manualHelocPct);
+    if (settings.manualCashOutPct !== undefined) setManualCashOutPct(settings.manualCashOutPct);
     
     // Apply rate settings
     if (settings.mortgageRate !== undefined) setMortgageRate(settings.mortgageRate);
@@ -492,6 +497,7 @@ export default function HomePurchaseOptimizer() {
     manualDpPct: setManualDpPct,
     manualMarginPct: setManualMarginPct,
     manualHelocPct: setManualHelocPct,
+    manualCashOutPct: setManualCashOutPct,
     activeTab: setActiveTab,
     location: setSelectedLocation,
     appMode: setAppMode,
@@ -523,11 +529,11 @@ export default function HomePurchaseOptimizer() {
     homePrice, totalSavings, stockPortfolio, grossIncome, monthlyRent, rentGrowth,
     filingStatus, mortgageRate, marginRate, helocRate, cashOutRefiRate,
     investmentReturn, dividendYield, homeAppreciation, loanTerm, minBuffer,
-    manualDpPct, manualMarginPct, manualHelocPct, activeTab, location: selectedLocation, appMode
+    manualDpPct, manualMarginPct, manualHelocPct, manualCashOutPct, activeTab, location: selectedLocation, appMode
   }), [homePrice, totalSavings, stockPortfolio, grossIncome, monthlyRent, rentGrowth,
       filingStatus, mortgageRate, marginRate, helocRate, cashOutRefiRate,
       investmentReturn, dividendYield, homeAppreciation, loanTerm, minBuffer,
-      manualDpPct, manualMarginPct, manualHelocPct, activeTab, selectedLocation, appMode]);
+      manualDpPct, manualMarginPct, manualHelocPct, manualCashOutPct, activeTab, selectedLocation, appMode]);
 
   // Default values for comparison (only include non-default in URL)
   const defaults = useMemo(() => ({
@@ -536,7 +542,7 @@ export default function HomePurchaseOptimizer() {
     filingStatus: 'married', mortgageRate: 6.5, marginRate: 6.5,
     helocRate: 8.5, cashOutRefiRate: 6.75, investmentReturn: 8,
     dividendYield: 2, homeAppreciation: 5, loanTerm: 30, minBuffer: 0,
-    manualDpPct: 30, manualMarginPct: 0, manualHelocPct: 0, activeTab: 'afford', location: 'sf', appMode: 'explore'
+    manualDpPct: 30, manualMarginPct: 0, manualHelocPct: 0, manualCashOutPct: 0, activeTab: 'afford', location: 'sf', appMode: 'explore'
   }), []);
 
   // Update URL when state changes (debounced)
@@ -635,16 +641,23 @@ export default function HomePurchaseOptimizer() {
     const marginLoan = stockPortfolio * (manualMarginPct / 100);
     const totalDown = homePrice * (manualDpPct / 100);
     const cashDown = Math.max(0, totalDown - marginLoan);
-    
+
     // HELOC only viable if buying outright (100% down)
     const canHELOC = manualDpPct >= 100 || (cashDown + marginLoan >= homePrice);
-    const helocAmount = canHELOC && manualHelocPct > 0 ? homePrice * (manualHelocPct / 100) : 0;
-    
+    const needsMortgage = (manualDpPct >= 100 ? homePrice - marginLoan : cashDown) + marginLoan < homePrice;
+
+    // Cash-out refi: only with mortgage, mutually exclusive with HELOC
+    const cashOutAmount = needsMortgage && manualCashOutPct > 0 ? homePrice * (manualCashOutPct / 100) : 0;
+    // Enforce mutual exclusivity
+    const effectiveHelocAmount = canHELOC && !cashOutAmount && manualHelocPct > 0 ? homePrice * (manualHelocPct / 100) : 0;
+
     return calcScenario({
       homePrice,
       cashDown: manualDpPct >= 100 ? homePrice - marginLoan : cashDown,
       marginLoan,
-      helocAmount,
+      helocAmount: effectiveHelocAmount,
+      cashOutRefiAmount: cashOutAmount,
+      cashOutRefiRate: cashOutRefiRate / 100,
       mortgageRate: mortgageRate / 100,
       loanTerm,
       appreciationRate: homeAppreciation / 100,
@@ -662,9 +675,9 @@ export default function HomePurchaseOptimizer() {
       grossIncome,
       loc
     });
-  }, [homePrice, manualDpPct, manualMarginPct, manualHelocPct, stockPortfolio, mortgageRate, loanTerm, homeAppreciation, investmentReturn, dividendYield, monthlyRent, rentGrowth, marginRate, helocRate, fedRate, stateRate, stateTax, stdDeduction, filingStatus, grossIncome, selectedLocation]);
+  }, [homePrice, manualDpPct, manualMarginPct, manualHelocPct, manualCashOutPct, stockPortfolio, mortgageRate, cashOutRefiRate, loanTerm, homeAppreciation, investmentReturn, dividendYield, monthlyRent, rentGrowth, marginRate, helocRate, fedRate, stateRate, stateTax, stdDeduction, filingStatus, grossIncome, selectedLocation]);
   
-  const manualRemaining = totalSavings - manualScenario.cashDown - manualScenario.txCosts.buy + manualScenario.helocAmount;
+  const manualRemaining = totalSavings - manualScenario.cashDown - manualScenario.txCosts.buy + manualScenario.helocAmount + manualScenario.cashOutRefiAmount;
   const canManualHELOC = manualScenario.cashDown + (stockPortfolio * manualMarginPct / 100) >= homePrice;
 
   // Affordability calculation (memoized)
@@ -759,7 +772,12 @@ export default function HomePurchaseOptimizer() {
           <div style={{ textAlign: 'right', padding: '6px 0' }}>{fmt$(nr.mortgageInterest)}</div>
           <div style={{ textAlign: 'right', padding: '6px 0' }}>{fmt$(nr.mortgageInterest/12)}</div>
         </>}
-        
+        {nr.monthlyPrincipal > 0 && <>
+          <div style={{ color: '#6b7280', padding: '4px 0 4px 20px', fontStyle: 'italic', fontSize: '0.8rem' }}>↳ Principal → Equity (not a cost)</div>
+          <div style={{ textAlign: 'right', padding: '4px 0', color: '#6b7280', fontStyle: 'italic', fontSize: '0.8rem' }}>{fmt$(nr.monthlyPrincipal * 12)}</div>
+          <div style={{ textAlign: 'right', padding: '4px 0', color: '#6b7280', fontStyle: 'italic', fontSize: '0.8rem' }}>{fmt$(nr.monthlyPrincipal)}</div>
+        </>}
+
         {nr.marginInterest > 0 && <>
           <div style={{ color: '#a78bfa', padding: '6px 0' }}>📈 Margin Interest</div>
           <div style={{ textAlign: 'right', padding: '6px 0' }}>{fmt$(nr.marginInterest)}</div>
@@ -806,7 +824,7 @@ export default function HomePurchaseOptimizer() {
         <div style={{ textAlign: 'right', color: '#4ade80', padding: '6px 0' }}>({fmt$(-nr.mortgageTaxBenefit)})</div>
         <div style={{ textAlign: 'right', color: '#4ade80', padding: '6px 0' }}>({fmt$(-nr.mortgageTaxBenefit/12)})</div>
         
-        <div style={{ color: '#4ade80', padding: '6px 0' }}>💰 Investment Interest Benefit</div>
+        <div style={{ color: '#4ade80', padding: '6px 0' }}>💰 Interest Tracing Benefit</div>
         <div style={{ textAlign: 'right', color: '#4ade80', padding: '6px 0' }}>({fmt$(-nr.investInterestTaxBenefit)})</div>
         <div style={{ textAlign: 'right', color: '#4ade80', padding: '6px 0' }}>({fmt$(-nr.investInterestTaxBenefit/12)})</div>
         
@@ -1908,6 +1926,28 @@ export default function HomePurchaseOptimizer() {
           <div style={{ marginTop: '12px', fontSize: '0.85rem', color: '#8b8ba7' }}>
             Total investment return: {fmt$(opt.totalInvestmentIncome)}/yr | Deductible income (dividends/interest): {fmt$(opt.totalDeductibleInvestmentIncome)}/yr
           </div>
+
+          {/* Tax Savings Summary */}
+          <div style={{ marginTop: '20px', padding: '16px', background: 'rgba(74,222,128,0.08)', borderRadius: '12px', border: '1px solid rgba(74,222,128,0.2)' }}>
+            <div style={{ fontSize: '0.85rem', color: '#4ade80', fontWeight: '600', marginBottom: '12px' }}>Tax Savings Summary</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '4px 16px', fontSize: '0.85rem' }}>
+              {opt.federalMortgageTaxBenefit > 0 && <>
+                <div style={{ color: '#c0c0d0', padding: '4px 0' }}>Federal mortgage deduction ({fmt$(opt.federalDeductibleMortgageInterest)})</div>
+                <div style={{ textAlign: 'right', color: '#4ade80', padding: '4px 0' }}>{fmt$(opt.federalMortgageTaxBenefit)}/yr</div>
+              </>}
+              {opt.stateMortgageTaxBenefit > 0 && <>
+                <div style={{ color: '#c0c0d0', padding: '4px 0' }}>{loc.state} mortgage deduction ({fmt$(opt.stateDeductibleMortgageInterest)})</div>
+                <div style={{ textAlign: 'right', color: '#4ade80', padding: '4px 0' }}>{fmt$(opt.stateMortgageTaxBenefit)}/yr</div>
+              </>}
+              {opt.investInterestTaxBenefit > 0 && <>
+                <div style={{ color: '#c0c0d0', padding: '4px 0' }}>Investment interest deduction ({fmt$(opt.investmentInterestDeduction)})</div>
+                <div style={{ textAlign: 'right', color: '#4ade80', padding: '4px 0' }}>{fmt$(opt.investInterestTaxBenefit)}/yr</div>
+              </>}
+              <div style={{ gridColumn: '1 / -1', height: '1px', background: 'rgba(74,222,128,0.3)', margin: '4px 0' }} />
+              <div style={{ fontWeight: '600', color: '#fff', padding: '4px 0' }}>Total annual tax savings</div>
+              <div style={{ textAlign: 'right', fontWeight: '700', color: '#4ade80', padding: '4px 0', fontSize: '1rem' }}>{fmt$(opt.totalTaxBenefit)}/yr</div>
+            </div>
+          </div>
         </div>
         
         {/* Non-recoverable breakdown */}
@@ -2059,14 +2099,31 @@ export default function HomePurchaseOptimizer() {
           
           <div style={s.inputGroup}>
             <label style={s.label}>HELOC: {manualHelocPct}% of home ({fmt$(homePrice * manualHelocPct / 100)})</label>
-            <input type="range" min="0" max="80" value={manualHelocPct} onChange={e => { setManualHelocPct(Number(e.target.value)); setActivePreset(null); }} style={s.slider} disabled={!canManualHELOC} />
-            {!canManualHELOC && manualHelocPct === 0 && (
+            <input type="range" min="0" max="80" value={manualHelocPct} onChange={e => { setManualHelocPct(Number(e.target.value)); if (Number(e.target.value) > 0) setManualCashOutPct(0); setActivePreset(null); }} style={s.slider} disabled={!canManualHELOC || manualCashOutPct > 0} />
+            {!canManualHELOC && manualHelocPct === 0 && manualCashOutPct === 0 && (
               <div style={{ color: '#8b8ba7', fontSize: '0.8rem', marginTop: '4px' }}>
                 HELOC requires cash + margin ≥ home price. Currently: {fmt$(manualScenario.cashDown + (stockPortfolio * manualMarginPct / 100))} vs {fmt$(homePrice)} needed
               </div>
             )}
+            {manualCashOutPct > 0 && (
+              <div style={{ color: '#8b8ba7', fontSize: '0.8rem', marginTop: '4px' }}>Disabled — HELOC and cash-out refi are mutually exclusive</div>
+            )}
             {sc.helocAmount > 0 && (
-              <div style={{ color: '#4ade80', fontSize: '0.8rem', marginTop: '4px' }}>✓ HELOC active: {fmt$(sc.helocAmount)}</div>
+              <div style={{ color: '#4ade80', fontSize: '0.8rem', marginTop: '4px' }}>✓ HELOC active: {fmt$(sc.helocAmount)} — interest traceable as investment interest</div>
+            )}
+          </div>
+
+          <div style={s.inputGroup}>
+            <label style={s.label}>Cash-Out Refi: {manualCashOutPct}% of home ({fmt$(homePrice * manualCashOutPct / 100)})</label>
+            <input type="range" min="0" max="50" value={manualCashOutPct} onChange={e => { setManualCashOutPct(Number(e.target.value)); if (Number(e.target.value) > 0) setManualHelocPct(0); setActivePreset(null); }} style={s.slider} disabled={manualDpPct >= 100 || manualHelocPct > 0} />
+            {manualDpPct >= 100 && (
+              <div style={{ color: '#8b8ba7', fontSize: '0.8rem', marginTop: '4px' }}>Disabled — cash-out refi requires a mortgage (down payment {'<'} 100%)</div>
+            )}
+            {manualHelocPct > 0 && manualDpPct < 100 && (
+              <div style={{ color: '#8b8ba7', fontSize: '0.8rem', marginTop: '4px' }}>Disabled — HELOC and cash-out refi are mutually exclusive</div>
+            )}
+            {sc.cashOutRefiAmount > 0 && (
+              <div style={{ color: '#4ade80', fontSize: '0.8rem', marginTop: '4px' }}>✓ Cash-out refi active: {fmt$(sc.cashOutRefiAmount)} — interest traceable as investment interest</div>
             )}
           </div>
         </div>
@@ -2090,17 +2147,52 @@ export default function HomePurchaseOptimizer() {
           <div className="hpo-two-col" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
             <div>
               <div style={s.costLine}><span style={{ color: '#8b8ba7' }}>Cash from savings:</span><span>{fmt$(sc.cashDown)}</span></div>
-              <div style={s.costLine}><span style={{ color: '#a78bfa' }}>Margin loan:</span><span>{fmt$(sc.marginLoan)}</span></div>
-              <div style={s.costLine}><span style={{ color: '#f87171' }}>Mortgage:</span><span>{fmt$(sc.mortgageLoan)}</span></div>
-              <div style={s.costLine}><span style={{ color: '#60a5fa' }}>HELOC (proceeds back):</span><span style={{ color: '#4ade80' }}>+{fmt$(sc.helocAmount)}</span></div>
+              {sc.marginLoan > 0 && <div style={s.costLine}><span style={{ color: '#a78bfa' }}>Margin loan:</span><span>{fmt$(sc.marginLoan)}</span></div>}
+              {sc.mortgageLoan > 0 && <div style={s.costLine}><span style={{ color: '#f87171' }}>Mortgage:</span><span>{fmt$(sc.mortgageLoan)}</span></div>}
+              {sc.isCashOutRefi && <div style={s.costLine}><span style={{ color: '#22d3ee' }}>Cash-out refi (proceeds):</span><span style={{ color: '#4ade80' }}>+{fmt$(sc.cashOutRefiAmount)}</span></div>}
+              {sc.helocAmount > 0 && <div style={s.costLine}><span style={{ color: '#60a5fa' }}>HELOC (proceeds back):</span><span style={{ color: '#4ade80' }}>+{fmt$(sc.helocAmount)}</span></div>}
             </div>
             <div>
-              <div style={s.costLine}><span style={{ color: '#8b8ba7' }}>Mortgage eff. rate:</span><span>{fmtPct(sc.mortgageEffectiveRate)}</span></div>
-              <div style={s.costLine}><span style={{ color: '#8b8ba7' }}>Margin eff. rate:</span><span>{fmtPct(sc.marginEffectiveRate)}</span></div>
-              <div style={s.costLine}><span style={{ color: '#8b8ba7' }}>HELOC eff. rate:</span><span>{fmtPct(sc.helocEffectiveRate)}</span></div>
+              {(sc.mortgageLoan > 0 || sc.isCashOutRefi) && <div style={s.costLine}><span style={{ color: '#8b8ba7' }}>{sc.isCashOutRefi ? 'Refi' : 'Mortgage'} eff. rate:</span><span>{fmtPct(sc.isCashOutRefi ? sc.cashOutEffectiveRate : sc.mortgageEffectiveRate)}</span></div>}
+              {sc.marginLoan > 0 && <div style={s.costLine}><span style={{ color: '#8b8ba7' }}>Margin eff. rate:</span><span>{fmtPct(sc.marginEffectiveRate)}</span></div>}
+              {sc.helocAmount > 0 && <div style={s.costLine}><span style={{ color: '#8b8ba7' }}>HELOC eff. rate:</span><span>{fmtPct(sc.helocEffectiveRate)}</span></div>}
               <div style={{ ...s.costLine, fontWeight: '600' }}><span>Blended:</span><span style={{ color: '#4ade80' }}>{fmtPct(sc.blendedEffectiveRate)}</span></div>
             </div>
           </div>
+
+          {/* Interest Tracing Summary */}
+          {(sc.marginLoan > 0 || sc.helocAmount > 0 || sc.cashOutRefiAmount > 0) && (
+            <div style={{ marginTop: '16px', padding: '14px', background: 'rgba(167,139,250,0.08)', borderRadius: '10px', border: '1px solid rgba(167,139,250,0.2)' }}>
+              <div style={{ fontSize: '0.82rem', color: '#a78bfa', fontWeight: '600', marginBottom: '10px' }}>Interest Tracing Summary</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: '4px 16px', fontSize: '0.82rem' }}>
+                <div style={{ color: '#8b8ba7', fontWeight: '600', paddingBottom: '4px' }}>Source</div>
+                <div style={{ color: '#8b8ba7', fontWeight: '600', textAlign: 'right', paddingBottom: '4px' }}>Interest/yr</div>
+                <div style={{ color: '#8b8ba7', fontWeight: '600', textAlign: 'right', paddingBottom: '4px' }}>Deductible</div>
+                {sc.marginLoan > 0 && <>
+                  <div style={{ color: '#c0c0d0', padding: '3px 0' }}>Margin loan</div>
+                  <div style={{ textAlign: 'right', padding: '3px 0' }}>{fmt$(sc.marginInterestAnnual)}</div>
+                  <div style={{ textAlign: 'right', color: '#4ade80', padding: '3px 0' }}>{fmt$(sc.deductibleMarginInterest)}</div>
+                </>}
+                {sc.cashOutRefiAmount > 0 && <>
+                  <div style={{ color: '#c0c0d0', padding: '3px 0' }}>Cash-out refi</div>
+                  <div style={{ textAlign: 'right', padding: '3px 0' }}>{fmt$(sc.cashOutInterestAnnual)}</div>
+                  <div style={{ textAlign: 'right', color: '#4ade80', padding: '3px 0' }}>{fmt$(sc.deductibleCashOutInterest)}</div>
+                </>}
+                {sc.helocAmount > 0 && <>
+                  <div style={{ color: '#c0c0d0', padding: '3px 0' }}>HELOC</div>
+                  <div style={{ textAlign: 'right', padding: '3px 0' }}>{fmt$(sc.helocInterestAnnual)}</div>
+                  <div style={{ textAlign: 'right', color: '#4ade80', padding: '3px 0' }}>{fmt$(sc.deductibleHELOCInterest)}</div>
+                </>}
+                <div style={{ gridColumn: '1 / -1', height: '1px', background: 'rgba(167,139,250,0.3)', margin: '4px 0' }} />
+                <div style={{ fontWeight: '600', color: '#fff', padding: '3px 0' }}>Total deductible</div>
+                <div style={{ textAlign: 'right', fontWeight: '600', padding: '3px 0' }}>{fmt$(sc.marginInterestAnnual + sc.cashOutInterestAnnual + sc.helocInterestAnnual)}</div>
+                <div style={{ textAlign: 'right', fontWeight: '700', color: '#4ade80', padding: '3px 0' }}>{fmt$(sc.investmentInterestDeduction)}</div>
+              </div>
+              <div style={{ marginTop: '8px', fontSize: '0.78rem', color: '#8b8ba7' }}>
+                Deductible limited by investment income ({fmt$(sc.totalDeductibleInvestmentIncome)}/yr from dividends/interest). Tax savings: {fmt$(sc.investInterestTaxBenefit)}/yr
+              </div>
+            </div>
+          )}
         </div>
         
         {/* Non-recoverable */}
@@ -2112,16 +2204,82 @@ export default function HomePurchaseOptimizer() {
         {/* Tax analysis */}
         <div className="hpo-card" style={s.card}>
           <h3 style={{ ...s.section, marginTop: 0 }}>Tax Analysis</h3>
-          <div className="hpo-two-col" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
-            <div>
-              <div style={s.costLine}><span style={{ color: '#8b8ba7' }}>Itemized deductions:</span><span>{fmt$(sc.itemizedTotal)}</span></div>
-              <div style={s.costLine}><span style={{ color: '#8b8ba7' }}>Standard deduction:</span><span>{fmt$(sc.stdDeduction)}</span></div>
-              <div style={s.costLine}><span style={{ color: '#8b8ba7' }}>Should itemize?</span><span style={{ color: sc.shouldItemize ? '#4ade80' : '#f87171' }}>{sc.shouldItemize ? 'YES' : 'NO'}</span></div>
+
+          {/* Federal Mortgage Interest Deduction */}
+          <div style={{ marginBottom: '20px' }}>
+            <div style={{ fontSize: '0.85rem', fontWeight: '600', color: '#60a5fa', marginBottom: '8px' }}>Federal Mortgage Interest Deduction</div>
+            <div style={s.costLine}><span style={{ color: '#8b8ba7' }}>Deductible mortgage interest:</span><span>{fmt$(sc.federalDeductibleMortgageInterest)}</span></div>
+            <div style={s.costLine}><span style={{ color: '#8b8ba7' }}>SALT (capped at $10K):</span><span>{fmt$(sc.saltCapped)}</span></div>
+            {sc.saltLost > 0 && <div style={s.costLine}><span style={{ color: '#f87171', fontSize: '0.8rem' }}>SALT lost to cap:</span><span style={{ color: '#f87171', fontSize: '0.8rem' }}>{fmt$(sc.saltLost)}</span></div>}
+            <div style={{ ...s.costLine, borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '6px', marginTop: '4px' }}>
+              <span style={{ color: '#8b8ba7' }}>Total itemized:</span><span>{fmt$(sc.itemizedTotal)}</span>
             </div>
-            <div>
-              <div style={s.costLine}><span style={{ color: '#4ade80' }}>Mortgage tax benefit:</span><span style={{ color: '#4ade80' }}>{fmt$(sc.mortgageTaxBenefit)}/yr</span></div>
-              <div style={s.costLine}><span style={{ color: '#4ade80' }}>Investment int. benefit:</span><span style={{ color: '#4ade80' }}>{fmt$(sc.investInterestTaxBenefit)}/yr</span></div>
-              <div style={{ ...s.costLine, fontWeight: '600' }}><span>Total tax benefit:</span><span style={{ color: '#4ade80' }}>{fmt$(sc.totalTaxBenefit)}/yr</span></div>
+            <div style={s.costLine}><span style={{ color: '#8b8ba7' }}>Standard deduction:</span><span>{fmt$(sc.stdDeduction)}</span></div>
+            <div style={s.costLine}>
+              <span style={{ color: '#8b8ba7' }}>Should itemize?</span>
+              <span style={{ color: sc.shouldItemize ? '#4ade80' : '#f87171', fontWeight: '600' }}>{sc.shouldItemize ? 'YES' : 'NO'}{sc.shouldItemize ? ` (+${fmt$(sc.itemizedTotal - sc.stdDeduction)} above standard)` : ''}</span>
+            </div>
+            <div style={{ ...s.costLine, fontWeight: '600', marginTop: '4px' }}>
+              <span style={{ color: '#4ade80' }}>Federal mortgage savings:</span>
+              <span style={{ color: '#4ade80' }}>{fmt$(sc.federalMortgageTaxBenefit)}/yr</span>
+            </div>
+          </div>
+
+          {/* State Mortgage Interest Deduction */}
+          {loc.hasStateIncomeTax && (
+            <div style={{ marginBottom: '20px' }}>
+              <div style={{ fontSize: '0.85rem', fontWeight: '600', color: '#c084fc', marginBottom: '8px' }}>{loc.stateLabel} Mortgage Interest Deduction</div>
+              <div style={s.costLine}><span style={{ color: '#8b8ba7' }}>Deductible mortgage interest:</span><span>{fmt$(sc.stateDeductibleMortgageInterest)}</span></div>
+              <div style={s.costLine}><span style={{ color: '#8b8ba7' }}>Property tax:</span><span>{fmt$(sc.propTaxAnnual)}</span></div>
+              <div style={{ ...s.costLine, borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '6px', marginTop: '4px' }}>
+                <span style={{ color: '#8b8ba7' }}>State itemized:</span><span>{fmt$(sc.stateItemizedTotal)}</span>
+              </div>
+              <div style={s.costLine}><span style={{ color: '#8b8ba7' }}>State standard deduction:</span><span>{fmt$(sc.stateStdDeduction)}</span></div>
+              <div style={s.costLine}>
+                <span style={{ color: '#8b8ba7' }}>Should itemize (state)?</span>
+                <span style={{ color: sc.shouldItemizeState ? '#4ade80' : '#f87171', fontWeight: '600' }}>{sc.shouldItemizeState ? 'YES' : 'NO'}</span>
+              </div>
+              <div style={{ ...s.costLine, fontWeight: '600', marginTop: '4px' }}>
+                <span style={{ color: '#4ade80' }}>{loc.stateLabel} mortgage savings:</span>
+                <span style={{ color: '#4ade80' }}>{fmt$(sc.stateMortgageTaxBenefit)}/yr</span>
+              </div>
+            </div>
+          )}
+
+          {/* Interest Tracing Deduction */}
+          {sc.investInterestTaxBenefit > 0 && (
+            <div style={{ marginBottom: '20px' }}>
+              <div style={{ fontSize: '0.85rem', fontWeight: '600', color: '#fbbf24', marginBottom: '8px' }}>Interest Tracing (Investment Interest Deduction)</div>
+              {sc.deductibleMarginInterest > 0 && (
+                <div style={s.costLine}><span style={{ color: '#8b8ba7' }}>Margin interest deductible:</span><span>{fmt$(sc.deductibleMarginInterest)}/yr</span></div>
+              )}
+              {sc.deductibleCashOutInterest > 0 && (
+                <div style={s.costLine}><span style={{ color: '#8b8ba7' }}>Cash-out refi interest deductible:</span><span>{fmt$(sc.deductibleCashOutInterest)}/yr</span></div>
+              )}
+              {sc.deductibleHELOCInterest > 0 && (
+                <div style={s.costLine}><span style={{ color: '#8b8ba7' }}>HELOC interest deductible:</span><span>{fmt$(sc.deductibleHELOCInterest)}/yr</span></div>
+              )}
+              <div style={{ ...s.costLine, borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '6px', marginTop: '4px' }}>
+                <span style={{ color: '#8b8ba7' }}>Total investment interest deduction:</span><span>{fmt$(sc.investmentInterestDeduction)}/yr</span>
+              </div>
+              <div style={{ ...s.costLine, fontWeight: '600', marginTop: '4px' }}>
+                <span style={{ color: '#4ade80' }}>Interest tracing tax savings:</span>
+                <span style={{ color: '#4ade80' }}>{fmt$(sc.investInterestTaxBenefit)}/yr</span>
+              </div>
+              <div style={{ fontSize: '0.75rem', color: '#8b8ba7', marginTop: '6px' }}>
+                Limited by net investment income (dividends + interest − investment expenses)
+              </div>
+            </div>
+          )}
+
+          {/* Total */}
+          <div style={{ padding: '12px 16px', background: 'rgba(74,222,128,0.1)', borderRadius: '8px', border: '1px solid rgba(74,222,128,0.2)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontWeight: '700', fontSize: '1rem' }}>Total Annual Tax Benefit</span>
+              <span style={{ fontWeight: '700', fontSize: '1.1rem', color: '#4ade80' }}>{fmt$(sc.totalTaxBenefit)}/yr</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', color: '#8b8ba7', marginTop: '4px' }}>
+              <span>Federal mortgage: {fmt$(sc.federalMortgageTaxBenefit)}{loc.hasStateIncomeTax ? ` + ${loc.stateLabel}: ${fmt$(sc.stateMortgageTaxBenefit)}` : ''}{sc.investInterestTaxBenefit > 0 ? ` + Interest tracing: ${fmt$(sc.investInterestTaxBenefit)}` : ''}</span>
             </div>
           </div>
         </div>
@@ -3140,6 +3298,8 @@ export default function HomePurchaseOptimizer() {
 
   const renderTax = () => {
     const tb = taxBreakdown;
+    const opt = optimizationResult?.optimal;
+    const hasOpt = !!opt;
 
     return (
       <>
@@ -3223,21 +3383,23 @@ export default function HomePurchaseOptimizer() {
         {/* Mortgage Interest Deduction */}
         <div className="hpo-card" style={s.card}>
           <h3 style={{ ...s.section, marginTop: 0 }}>Mortgage Interest Deduction</h3>
-          <p style={{ color: '#8b8ba7', fontSize: '0.85rem', marginBottom: '16px' }}>Based on {fmt$(tb.mortgageAmount)} mortgage (80% LTV) at {mortgageRate}%</p>
+          <p style={{ color: '#8b8ba7', fontSize: '0.85rem', marginBottom: '16px' }}>
+            Based on {fmt$(hasOpt ? opt.acquisitionDebt : tb.mortgageAmount)} mortgage {hasOpt ? `(${opt.strategy})` : '(80% LTV)'} at {mortgageRate}%
+          </p>
 
           <div className="hpo-two-col" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
             <div style={{ background: 'rgba(59,130,246,0.1)', borderRadius: '12px', padding: '20px', border: '1px solid rgba(59,130,246,0.3)' }}>
               <div style={{ fontSize: '0.85rem', color: '#60a5fa', fontWeight: '600', marginBottom: '12px' }}>Federal Rules ($750K Limit)</div>
-              <div style={s.costLine}><span>Annual Interest:</span><span>{fmt$(tb.annualMortgageInterest)}</span></div>
-              <div style={s.costLine}><span style={{ color: '#4ade80' }}>Deductible:</span><span style={{ color: '#4ade80' }}>{fmt$(tb.fedDeductibleMortgageInt)}</span></div>
-              {tb.mortgageIntLostFederal > 0 && (
-                <div style={s.costLine}><span style={{ color: '#f87171' }}>Not Deductible:</span><span style={{ color: '#f87171' }}>{fmt$(tb.mortgageIntLostFederal)}</span></div>
+              <div style={s.costLine}><span>Annual Interest:</span><span>{fmt$(hasOpt ? opt.mortgageInterestAnnual : tb.annualMortgageInterest)}</span></div>
+              <div style={s.costLine}><span style={{ color: '#4ade80' }}>Deductible:</span><span style={{ color: '#4ade80' }}>{fmt$(hasOpt ? opt.federalDeductibleMortgageInterest : tb.fedDeductibleMortgageInt)}</span></div>
+              {(hasOpt ? opt.nonDeductibleMortgageInterest : tb.mortgageIntLostFederal) > 0 && (
+                <div style={s.costLine}><span style={{ color: '#f87171' }}>Not Deductible:</span><span style={{ color: '#f87171' }}>{fmt$(hasOpt ? opt.nonDeductibleMortgageInterest : tb.mortgageIntLostFederal)}</span></div>
               )}
             </div>
             <div style={{ background: 'rgba(74,222,128,0.1)', borderRadius: '12px', padding: '20px', border: '1px solid rgba(74,222,128,0.3)' }}>
               <div style={{ fontSize: '0.85rem', color: '#4ade80', fontWeight: '600', marginBottom: '12px' }}>{loc.state} Rules ({loc.stateMortgageDeductionLimit > 750000 ? `$${(loc.stateMortgageDeductionLimit/1000).toFixed(0)}K Limit` : '$750K Limit'})</div>
-              <div style={s.costLine}><span>Annual Interest:</span><span>{fmt$(tb.annualMortgageInterest)}</span></div>
-              <div style={s.costLine}><span style={{ color: '#4ade80' }}>Deductible:</span><span style={{ color: '#4ade80' }}>{fmt$(tb.stateDeductibleMortgageInt)}</span></div>
+              <div style={s.costLine}><span>Annual Interest:</span><span>{fmt$(hasOpt ? opt.mortgageInterestAnnual : tb.annualMortgageInterest)}</span></div>
+              <div style={s.costLine}><span style={{ color: '#4ade80' }}>Deductible:</span><span style={{ color: '#4ade80' }}>{fmt$(hasOpt ? opt.stateDeductibleMortgageInterest : tb.stateDeductibleMortgageInt)}</span></div>
               {loc.stateMortgageDeductionLimit > 750000 && (
                 <div style={{ fontSize: '0.8rem', color: '#8b8ba7', marginTop: '8px' }}>{loc.state} did not conform to TCJA</div>
               )}
@@ -3304,71 +3466,144 @@ export default function HomePurchaseOptimizer() {
         <div style={{ background: 'linear-gradient(135deg, rgba(74,222,128,0.15), rgba(34,197,94,0.1))', borderRadius: '20px', padding: '28px', border: '2px solid rgba(74,222,128,0.4)', marginBottom: '20px' }}>
           <h3 style={{ fontSize: '1.1rem', fontWeight: '600', color: '#4ade80', marginTop: 0, marginBottom: '20px' }}>💰 Estimated Annual Tax Savings from Homeownership</h3>
 
+          {/* Context banner */}
+          {hasOpt ? (
+            <div style={{ background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.3)', borderRadius: '8px', padding: '10px 14px', marginBottom: '16px', fontSize: '0.82rem', color: '#60a5fa' }}>
+              Based on your optimal strategy: {opt.strategy} ({fmtPctWhole(opt.dpPct)} down){opt.investInterestTaxBenefit > 0 ? '. Includes investment interest deductions.' : ''}
+            </div>
+          ) : (
+            <div style={{ background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.2)', borderRadius: '8px', padding: '10px 14px', marginBottom: '16px', fontSize: '0.82rem', color: '#fbbf24' }}>
+              Generic estimate (20% down, mortgage only). Run optimization on the Best Strategy tab for exact numbers.
+            </div>
+          )}
+
           {/* Summary Row */}
-          <div className="hpo-three-col" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', marginBottom: '24px' }}>
+          <div className="hpo-three-col" style={{ display: 'grid', gridTemplateColumns: (hasOpt && opt.investInterestTaxBenefit > 0) ? '1fr 1fr 1fr 1fr' : '1fr 1fr 1fr', gap: '16px', marginBottom: '24px' }}>
             <div style={{ textAlign: 'center' }}>
               <div style={{ fontSize: '0.75rem', color: '#8b8ba7', marginBottom: '4px' }}>Federal Savings</div>
-              <div style={{ fontSize: '1.5rem', fontWeight: '700', color: '#4ade80' }}>{fmt$(tb.fedTaxSavings)}</div>
+              <div style={{ fontSize: '1.5rem', fontWeight: '700', color: '#4ade80' }}>{fmt$(hasOpt ? opt.federalMortgageTaxBenefit : tb.fedTaxSavings)}</div>
             </div>
             <div style={{ textAlign: 'center' }}>
               <div style={{ fontSize: '0.75rem', color: '#8b8ba7', marginBottom: '4px' }}>{loc.state} Savings</div>
-              <div style={{ fontSize: '1.5rem', fontWeight: '700', color: '#4ade80' }}>{fmt$(tb.stateTaxSavings)}</div>
+              <div style={{ fontSize: '1.5rem', fontWeight: '700', color: '#4ade80' }}>{fmt$(hasOpt ? opt.stateMortgageTaxBenefit : tb.stateTaxSavings)}</div>
             </div>
+            {hasOpt && opt.investInterestTaxBenefit > 0 && (
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: '0.75rem', color: '#8b8ba7', marginBottom: '4px' }}>Investment Int.</div>
+                <div style={{ fontSize: '1.5rem', fontWeight: '700', color: '#4ade80' }}>{fmt$(opt.investInterestTaxBenefit)}</div>
+              </div>
+            )}
             <div style={{ textAlign: 'center', background: 'rgba(0,0,0,0.2)', borderRadius: '12px', padding: '12px' }}>
               <div style={{ fontSize: '0.75rem', color: '#8b8ba7', marginBottom: '4px' }}>Total Annual Savings</div>
-              <div style={{ fontSize: '1.8rem', fontWeight: '700', color: '#fff' }}>{fmt$(tb.totalTaxSavings)}</div>
+              <div style={{ fontSize: '1.8rem', fontWeight: '700', color: '#fff' }}>{fmt$(hasOpt ? opt.totalTaxBenefit : tb.totalTaxSavings)}</div>
             </div>
           </div>
 
           {/* Calculation Breakdown */}
-          <div className="hpo-two-col" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', borderTop: '1px solid rgba(74,222,128,0.3)', paddingTop: '20px' }}>
-            {/* Federal Calculation */}
-            <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '12px', padding: '16px' }}>
-              <div style={{ fontSize: '0.75rem', color: '#60a5fa', textTransform: 'uppercase', marginBottom: '12px', fontWeight: '600' }}>Federal Savings Breakdown</div>
-              {tb.shouldItemizeFed ? (
-                <>
-                  <div style={{ ...s.costLine, fontSize: '0.85rem' }}><span>Itemized total:</span><span>{fmt$(tb.fedItemized)}</span></div>
-                  <div style={{ ...s.costLine, fontSize: '0.85rem', color: '#f87171' }}><span>Minus standard deduction:</span><span>-{fmt$(stdDeduction)}</span></div>
-                  <div style={{ ...s.costLine, fontSize: '0.85rem', fontWeight: '600', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '8px', marginTop: '6px' }}>
-                    <span>Extra deductions:</span><span>{fmt$(Math.max(0, tb.fedItemized - stdDeduction))}</span>
+          {hasOpt ? (
+            <div className="hpo-two-col" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', borderTop: '1px solid rgba(74,222,128,0.3)', paddingTop: '20px' }}>
+              {/* Federal Calculation - from actual strategy */}
+              <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '12px', padding: '16px' }}>
+                <div style={{ fontSize: '0.75rem', color: '#60a5fa', textTransform: 'uppercase', marginBottom: '12px', fontWeight: '600' }}>Federal Savings Breakdown</div>
+                {opt.shouldItemize ? (
+                  <>
+                    <div style={{ ...s.costLine, fontSize: '0.85rem' }}><span>Deductible mortgage int.:</span><span>{fmt$(opt.federalDeductibleMortgageInterest)}</span></div>
+                    <div style={{ ...s.costLine, fontSize: '0.85rem' }}><span>SALT (capped at $10K):</span><span>{fmt$(opt.saltCapped)}</span></div>
+                    <div style={{ ...s.costLine, fontSize: '0.85rem', fontWeight: '600', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '8px', marginTop: '6px' }}>
+                      <span>Itemized total:</span><span>{fmt$(opt.itemizedTotal)}</span>
+                    </div>
+                    <div style={{ ...s.costLine, fontSize: '0.85rem', color: '#f87171' }}><span>Minus standard deduction:</span><span>-{fmt$(opt.stdDeduction)}</span></div>
+                    <div style={{ ...s.costLine, fontSize: '0.85rem', fontWeight: '600', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '8px', marginTop: '6px' }}>
+                      <span>Extra deductions:</span><span>{fmt$(Math.max(0, opt.itemizedTotal - opt.stdDeduction))}</span>
+                    </div>
+                    <div style={{ ...s.costLine, fontSize: '0.85rem', color: '#fb923c' }}><span>Times marginal rate:</span><span>× {fmtPct(fedRate)}</span></div>
+                    <div style={{ ...s.costLine, fontSize: '0.95rem', fontWeight: '700', color: '#4ade80', borderTop: '1px solid rgba(74,222,128,0.3)', paddingTop: '8px', marginTop: '6px' }}>
+                      <span>Federal mortgage savings:</span><span>{fmt$(opt.federalMortgageTaxBenefit)}</span>
+                    </div>
+                  </>
+                ) : (
+                  <div style={{ fontSize: '0.85rem', color: '#8b8ba7', fontStyle: 'italic' }}>
+                    Standard deduction ({fmt$(opt.stdDeduction)}) exceeds itemized ({fmt$(opt.itemizedTotal)}). No additional federal savings.
                   </div>
-                  <div style={{ ...s.costLine, fontSize: '0.85rem', color: '#fb923c' }}><span>Times marginal rate:</span><span>× {fmtPct(tb.fedRate)}</span></div>
-                  <div style={{ ...s.costLine, fontSize: '0.95rem', fontWeight: '700', color: '#4ade80', borderTop: '1px solid rgba(74,222,128,0.3)', paddingTop: '8px', marginTop: '6px' }}>
-                    <span>Federal tax savings:</span><span>{fmt$(tb.fedTaxSavings)}</span>
-                  </div>
-                </>
-              ) : (
-                <div style={{ fontSize: '0.85rem', color: '#8b8ba7', fontStyle: 'italic' }}>
-                  Standard deduction ({fmt$(stdDeduction)}) exceeds itemized ({fmt$(tb.fedItemized)}). No additional federal savings from homeownership deductions.
-                </div>
-              )}
-            </div>
+                )}
+              </div>
 
-            {/* State Calculation */}
-            <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '12px', padding: '16px' }}>
-              <div style={{ fontSize: '0.75rem', color: '#eab308', textTransform: 'uppercase', marginBottom: '12px', fontWeight: '600' }}>{loc.state} Savings Breakdown</div>
-              {tb.shouldItemizeState ? (
-                <>
-                  <div style={{ ...s.costLine, fontSize: '0.85rem' }}><span>Itemized total:</span><span>{fmt$(tb.stateItemized)}</span></div>
-                  <div style={{ ...s.costLine, fontSize: '0.85rem', color: '#f87171' }}><span>Minus standard deduction:</span><span>-{fmt$(tb.stateStd)}</span></div>
-                  <div style={{ ...s.costLine, fontSize: '0.85rem', fontWeight: '600', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '8px', marginTop: '6px' }}>
-                    <span>Extra deductions:</span><span>{fmt$(Math.max(0, tb.stateItemized - tb.stateStd))}</span>
+              {/* State Calculation - from actual strategy */}
+              <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '12px', padding: '16px' }}>
+                <div style={{ fontSize: '0.75rem', color: '#eab308', textTransform: 'uppercase', marginBottom: '12px', fontWeight: '600' }}>{loc.state} Savings Breakdown</div>
+                {opt.shouldItemizeState ? (
+                  <>
+                    <div style={{ ...s.costLine, fontSize: '0.85rem' }}><span>Deductible mortgage int.:</span><span>{fmt$(opt.stateDeductibleMortgageInterest)}</span></div>
+                    <div style={{ ...s.costLine, fontSize: '0.85rem' }}><span>Property tax:</span><span>{fmt$(opt.propTax)}</span></div>
+                    <div style={{ ...s.costLine, fontSize: '0.85rem', fontWeight: '600', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '8px', marginTop: '6px' }}>
+                      <span>Itemized total:</span><span>{fmt$(opt.stateItemizedTotal)}</span>
+                    </div>
+                    <div style={{ ...s.costLine, fontSize: '0.85rem', color: '#f87171' }}><span>Minus standard deduction:</span><span>-{fmt$(opt.stateStdDeduction)}</span></div>
+                    <div style={{ ...s.costLine, fontSize: '0.85rem', fontWeight: '600', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '8px', marginTop: '6px' }}>
+                      <span>Extra deductions:</span><span>{fmt$(Math.max(0, opt.stateItemizedTotal - opt.stateStdDeduction))}</span>
+                    </div>
+                    <div style={{ ...s.costLine, fontSize: '0.85rem', color: '#fb923c' }}><span>Times marginal rate:</span><span>× {fmtPct(stateRate)}</span></div>
+                    <div style={{ ...s.costLine, fontSize: '0.95rem', fontWeight: '700', color: '#4ade80', borderTop: '1px solid rgba(74,222,128,0.3)', paddingTop: '8px', marginTop: '6px' }}>
+                      <span>{loc.state} tax savings:</span><span>{fmt$(opt.stateMortgageTaxBenefit)}</span>
+                    </div>
+                  </>
+                ) : (
+                  <div style={{ fontSize: '0.85rem', color: '#8b8ba7', fontStyle: 'italic' }}>
+                    {!loc.hasStateIncomeTax ? 'No state income tax' : `Standard deduction (${fmt$(opt.stateStdDeduction)}) exceeds itemized (${fmt$(opt.stateItemizedTotal)}). No additional ${loc.state} savings.`}
                   </div>
-                  <div style={{ ...s.costLine, fontSize: '0.85rem', color: '#fb923c' }}><span>Times marginal rate:</span><span>× {fmtPct(tb.stateRate)}</span></div>
-                  <div style={{ ...s.costLine, fontSize: '0.95rem', fontWeight: '700', color: '#4ade80', borderTop: '1px solid rgba(74,222,128,0.3)', paddingTop: '8px', marginTop: '6px' }}>
-                    <span>{loc.state} tax savings:</span><span>{fmt$(tb.stateTaxSavings)}</span>
-                  </div>
-                </>
-              ) : (
-                <div style={{ fontSize: '0.85rem', color: '#8b8ba7', fontStyle: 'italic' }}>
-                  Standard deduction ({fmt$(tb.stateStd)}) exceeds itemized ({fmt$(tb.stateItemized)}). No additional {loc.state} savings from homeownership deductions.
-                </div>
-              )}
+                )}
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="hpo-two-col" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', borderTop: '1px solid rgba(74,222,128,0.3)', paddingTop: '20px' }}>
+              {/* Federal Calculation - generic */}
+              <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '12px', padding: '16px' }}>
+                <div style={{ fontSize: '0.75rem', color: '#60a5fa', textTransform: 'uppercase', marginBottom: '12px', fontWeight: '600' }}>Federal Savings Breakdown</div>
+                {tb.shouldItemizeFed ? (
+                  <>
+                    <div style={{ ...s.costLine, fontSize: '0.85rem' }}><span>Itemized total:</span><span>{fmt$(tb.fedItemized)}</span></div>
+                    <div style={{ ...s.costLine, fontSize: '0.85rem', color: '#f87171' }}><span>Minus standard deduction:</span><span>-{fmt$(stdDeduction)}</span></div>
+                    <div style={{ ...s.costLine, fontSize: '0.85rem', fontWeight: '600', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '8px', marginTop: '6px' }}>
+                      <span>Extra deductions:</span><span>{fmt$(Math.max(0, tb.fedItemized - stdDeduction))}</span>
+                    </div>
+                    <div style={{ ...s.costLine, fontSize: '0.85rem', color: '#fb923c' }}><span>Times marginal rate:</span><span>× {fmtPct(tb.fedRate)}</span></div>
+                    <div style={{ ...s.costLine, fontSize: '0.95rem', fontWeight: '700', color: '#4ade80', borderTop: '1px solid rgba(74,222,128,0.3)', paddingTop: '8px', marginTop: '6px' }}>
+                      <span>Federal tax savings:</span><span>{fmt$(tb.fedTaxSavings)}</span>
+                    </div>
+                  </>
+                ) : (
+                  <div style={{ fontSize: '0.85rem', color: '#8b8ba7', fontStyle: 'italic' }}>
+                    Standard deduction ({fmt$(stdDeduction)}) exceeds itemized ({fmt$(tb.fedItemized)}). No additional federal savings from homeownership deductions.
+                  </div>
+                )}
+              </div>
+
+              {/* State Calculation - generic */}
+              <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '12px', padding: '16px' }}>
+                <div style={{ fontSize: '0.75rem', color: '#eab308', textTransform: 'uppercase', marginBottom: '12px', fontWeight: '600' }}>{loc.state} Savings Breakdown</div>
+                {tb.shouldItemizeState ? (
+                  <>
+                    <div style={{ ...s.costLine, fontSize: '0.85rem' }}><span>Itemized total:</span><span>{fmt$(tb.stateItemized)}</span></div>
+                    <div style={{ ...s.costLine, fontSize: '0.85rem', color: '#f87171' }}><span>Minus standard deduction:</span><span>-{fmt$(tb.stateStd)}</span></div>
+                    <div style={{ ...s.costLine, fontSize: '0.85rem', fontWeight: '600', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '8px', marginTop: '6px' }}>
+                      <span>Extra deductions:</span><span>{fmt$(Math.max(0, tb.stateItemized - tb.stateStd))}</span>
+                    </div>
+                    <div style={{ ...s.costLine, fontSize: '0.85rem', color: '#fb923c' }}><span>Times marginal rate:</span><span>× {fmtPct(tb.stateRate)}</span></div>
+                    <div style={{ ...s.costLine, fontSize: '0.95rem', fontWeight: '700', color: '#4ade80', borderTop: '1px solid rgba(74,222,128,0.3)', paddingTop: '8px', marginTop: '6px' }}>
+                      <span>{loc.state} tax savings:</span><span>{fmt$(tb.stateTaxSavings)}</span>
+                    </div>
+                  </>
+                ) : (
+                  <div style={{ fontSize: '0.85rem', color: '#8b8ba7', fontStyle: 'italic' }}>
+                    Standard deduction ({fmt$(tb.stateStd)}) exceeds itemized ({fmt$(tb.stateItemized)}). No additional {loc.state} savings from homeownership deductions.
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           <div style={{ marginTop: '16px', fontSize: '0.85rem', color: '#8b8ba7', textAlign: 'center' }}>
-            Compared to renting (taking standard deduction) • {fmt$(tb.totalTaxSavings / 12)}/month effective savings
+            Compared to renting (taking standard deduction) • {fmt$((hasOpt ? opt.totalTaxBenefit : tb.totalTaxSavings) / 12)}/month effective savings
           </div>
           
           {/* CTA: Factor Into Budget */}
@@ -4794,7 +5029,7 @@ export default function HomePurchaseOptimizer() {
                 <button style={{ ...s.tab, ...(activeTab === 'holding' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('holding')}>Own vs Rent</button>
                 <button style={{ ...s.tab, ...(activeTab === 'sensitivity' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('sensitivity')}>Sensitivity</button>
                 <button style={{ ...s.tab, ...(activeTab === 'tax' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('tax')}>Taxes</button>
-                <button style={{ ...s.tab, ...(activeTab === 'manual' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('manual')}>Build Your Own</button>
+                <button style={{ ...s.tab, ...(activeTab === 'manual' ? s.tabActive : s.tabInactive) }} onClick={() => setActiveTab('manual')}>Build Your Strategy</button>
               </>
             )}
           </div>
