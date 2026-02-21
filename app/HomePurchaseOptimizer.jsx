@@ -2083,22 +2083,22 @@ export default function HomePurchaseOptimizer() {
         </InfoBox>
         )}
 
-        <div className="hpo-card" style={s.card}>
+        <div className="hpo-card hpo-configure-section" style={s.card}>
           <h3 style={{ ...s.section, marginTop: 0 }}>Configure Your Scenario</h3>
-          
+
           <div style={s.inputGroup}>
-            <label style={s.label}>Down Payment: {manualDpPct}% ({fmt$(homePrice * manualDpPct / 100)})</label>
+            <label className="hpo-slider-label" style={s.label}>Down Payment: {manualDpPct}% <span className="hpo-label-amount">({fmt$(homePrice * manualDpPct / 100)})</span></label>
             <input type="range" min="10" max="100" value={manualDpPct} onChange={e => { setManualDpPct(Number(e.target.value)); setActivePreset(null); }} style={s.slider} />
           </div>
-          
+
           <div style={s.inputGroup}>
-            <label style={s.label}>Margin Loan: {manualMarginPct}% of portfolio ({fmt$(stockPortfolio * manualMarginPct / 100)})</label>
+            <label className="hpo-slider-label" style={s.label}>Margin Loan: {manualMarginPct}% <span className="hpo-label-amount">({fmt$(stockPortfolio * manualMarginPct / 100)})</span></label>
             <input type="range" min="0" max="30" value={manualMarginPct} onChange={e => { setManualMarginPct(Number(e.target.value)); setActivePreset(null); }} style={s.slider} />
             {manualMarginPct > 25 && <div style={{ color: '#fbbf24', fontSize: '0.8rem', marginTop: '4px' }}>⚠️ High margin ({'>'}25%) increases margin call risk</div>}
           </div>
-          
+
           <div style={s.inputGroup}>
-            <label style={s.label}>HELOC: {manualHelocPct}% of home ({fmt$(homePrice * manualHelocPct / 100)})</label>
+            <label className="hpo-slider-label" style={s.label}>HELOC: {manualHelocPct}% <span className="hpo-label-amount">({fmt$(homePrice * manualHelocPct / 100)})</span></label>
             <input type="range" min="0" max="80" value={manualHelocPct} onChange={e => { setManualHelocPct(Number(e.target.value)); if (Number(e.target.value) > 0) setManualCashOutPct(0); setActivePreset(null); }} style={s.slider} disabled={!canManualHELOC || manualCashOutPct > 0} />
             {!canManualHELOC && manualHelocPct === 0 && manualCashOutPct === 0 && (
               <div style={{ color: '#8b8ba7', fontSize: '0.8rem', marginTop: '4px' }}>
@@ -2114,7 +2114,7 @@ export default function HomePurchaseOptimizer() {
           </div>
 
           <div style={s.inputGroup}>
-            <label style={s.label}>Cash-Out Refi: {manualCashOutPct}% of home ({fmt$(homePrice * manualCashOutPct / 100)})</label>
+            <label className="hpo-slider-label" style={s.label}>Cash-Out Refi: {manualCashOutPct}% <span className="hpo-label-amount">({fmt$(homePrice * manualCashOutPct / 100)})</span></label>
             <input type="range" min="0" max="100" value={manualCashOutPct} onChange={e => { setManualCashOutPct(Number(e.target.value)); if (Number(e.target.value) > 0) setManualHelocPct(0); setActivePreset(null); }} style={s.slider} disabled={manualDpPct >= 100 || manualHelocPct > 0} />
             {manualDpPct >= 100 && (
               <div style={{ color: '#8b8ba7', fontSize: '0.8rem', marginTop: '4px' }}>Disabled — cash-out refi requires a mortgage (down payment {'<'} 100%)</div>
@@ -2606,41 +2606,42 @@ export default function HomePurchaseOptimizer() {
         </div>
         
         {/* CTA: Optimize & Compare */}
-        <div style={{
+        <div className="hpo-strategy-cta" style={{
           background: 'linear-gradient(135deg, rgba(59,130,246,0.15), rgba(139,92,246,0.1))',
           borderRadius: '16px',
           padding: '24px',
           border: '2px solid rgba(59,130,246,0.4)',
           textAlign: 'center',
         }}>
-          <div style={{ fontSize: '1rem', color: '#c0c0d0', marginBottom: '16px' }}>
-            Happy with this setup? Run the optimizer to see how it compares to other strategies.
+          <div style={{ fontSize: '0.95rem', color: '#c0c0d0', marginBottom: '16px' }}>
+            Happy with this setup? Run the optimizer to see how it compares.
           </div>
-          <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flexWrap: 'wrap' }}>
+          <div className="hpo-strategy-btns" style={{ display: 'flex', gap: '12px', justifyContent: 'center', flexWrap: 'wrap' }}>
             <button
               onClick={() => {
                 handleOptimize();
                 setActiveTab('scenarios');
               }}
+              className="hpo-cta-btn"
               style={{
-                padding: '14px 28px',
+                padding: '14px 24px',
                 borderRadius: '10px',
                 border: 'none',
                 cursor: 'pointer',
-                fontSize: '1rem',
+                fontSize: '0.95rem',
                 fontWeight: '600',
                 background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
                 color: '#fff',
                 display: 'flex',
                 alignItems: 'center',
+                justifyContent: 'center',
                 gap: '8px',
               }}
             >
-              🚀 Optimize & Compare Strategies
+              🚀 Optimize & Compare
             </button>
             <button
               onClick={() => {
-                // Add current manual scenario to comparison scenarios
                 const newScenario = {
                   id: Math.max(...scenarios.map(s => s.id), 0) + 1,
                   name: 'My Custom',
@@ -2652,21 +2653,23 @@ export default function HomePurchaseOptimizer() {
                 setScenarios(prev => [...prev.filter(s => s.name !== 'My Custom'), newScenario]);
                 setActiveTab('scenarios');
               }}
+              className="hpo-cta-btn"
               style={{
-                padding: '14px 28px',
+                padding: '14px 24px',
                 borderRadius: '10px',
                 border: '1px solid rgba(59,130,246,0.4)',
                 cursor: 'pointer',
-                fontSize: '1rem',
+                fontSize: '0.95rem',
                 fontWeight: '600',
                 background: 'rgba(59,130,246,0.1)',
                 color: '#60a5fa',
                 display: 'flex',
                 alignItems: 'center',
+                justifyContent: 'center',
                 gap: '8px',
               }}
             >
-              📊 Add to Compare Tab
+              📊 Add to Compare
             </button>
           </div>
         </div>
@@ -4705,6 +4708,9 @@ export default function HomePurchaseOptimizer() {
           /* Interest tracing grid */
           .hpo-tracing-grid { gap: 4px 12px !important; font-size: 0.78rem !important; }
 
+          /* Strategy CTA */
+          .hpo-strategy-cta { padding: 20px !important; }
+
           /* Charts */
           .hpo-chart { height: 280px !important; }
         }
@@ -4773,9 +4779,18 @@ export default function HomePurchaseOptimizer() {
           /* Build Your Strategy mobile fixes */
           .hpo-formula-hint { font-size: 0.7rem !important; text-align: left !important; }
           .hpo-tracing-grid { gap: 3px 10px !important; font-size: 0.75rem !important; }
-          .hpo-equity-breakdown { font-size: 0.82rem !important; }
-          .hpo-cashout-explainer { font-size: 0.78rem !important; padding: 10px !important; }
-          .hpo-tax-detail { font-size: 0.82rem !important; }
+          .hpo-equity-breakdown { font-size: 0.82rem !important; padding: 12px !important; }
+          .hpo-cashout-explainer { font-size: 0.75rem !important; padding: 10px !important; }
+          .hpo-cashout-explainer div { font-size: inherit !important; }
+          .hpo-tax-detail { font-size: 0.8rem !important; }
+          .hpo-tax-detail > div { font-size: inherit !important; }
+          .hpo-slider-label { font-size: 0.78rem !important; }
+          .hpo-label-amount { display: block !important; font-size: 0.72rem !important; color: #8b8ba7 !important; }
+          .hpo-configure-section .hpo-slider-label { margin-bottom: 2px !important; }
+          .hpo-strategy-cta { padding: 16px !important; }
+          .hpo-strategy-cta > div:first-child { font-size: 0.85rem !important; }
+          .hpo-strategy-btns { flex-direction: column !important; }
+          .hpo-strategy-btns button { width: 100% !important; font-size: 0.9rem !important; padding: 12px 16px !important; }
 
           /* Charts */
           .hpo-chart { height: 240px !important; }
@@ -4805,11 +4820,20 @@ export default function HomePurchaseOptimizer() {
           .hpo-cost-table { grid-template-columns: 1fr 80px 80px !important; font-size: 0.72rem !important; gap: 2px 8px !important; }
 
           /* Build Your Strategy extra-small */
-          .hpo-formula-hint { font-size: 0.65rem !important; }
-          .hpo-tracing-grid { gap: 2px 8px !important; font-size: 0.7rem !important; }
-          .hpo-cashout-explainer { font-size: 0.72rem !important; padding: 8px !important; }
-          .hpo-tax-detail { font-size: 0.75rem !important; }
-          .hpo-equity-breakdown { font-size: 0.75rem !important; padding: 10px !important; }
+          .hpo-formula-hint { font-size: 0.62rem !important; }
+          .hpo-formula-hint span { white-space: normal !important; }
+          .hpo-tracing-grid { gap: 2px 6px !important; font-size: 0.68rem !important; }
+          .hpo-cashout-explainer { font-size: 0.7rem !important; padding: 8px !important; }
+          .hpo-cashout-explainer div { font-size: inherit !important; }
+          .hpo-tax-detail { font-size: 0.72rem !important; }
+          .hpo-tax-detail > div { font-size: inherit !important; }
+          .hpo-equity-breakdown { font-size: 0.72rem !important; padding: 8px !important; }
+          .hpo-slider-label { font-size: 0.72rem !important; }
+          .hpo-label-amount { font-size: 0.65rem !important; }
+          .hpo-strategy-cta { padding: 12px !important; border-radius: 10px !important; }
+          .hpo-strategy-btns button { font-size: 0.82rem !important; padding: 10px 12px !important; }
+          .hpo-matrix-wrapper table { min-width: 440px !important; }
+          .hpo-matrix-wrapper th, .hpo-matrix-wrapper td { padding: 6px 4px !important; font-size: 0.68rem !important; }
         }
       `}</style>
       <header style={s.header}>
