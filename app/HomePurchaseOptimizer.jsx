@@ -716,10 +716,10 @@ export default function HomePurchaseOptimizer() {
        affMonthlyHOA, affMonthlyOtherDebt, monthlyRent, estEffectiveTaxRate, selectedLocation]);
 
   const s = {
-    container: { fontFamily: "'IBM Plex Sans', -apple-system, sans-serif", background: 'linear-gradient(135deg, #0c1220 0%, #1a1a2e 50%, #16213e 100%)', minHeight: '100vh', color: '#e0e0e0', padding: '24px', overflowX: 'hidden', boxSizing: 'border-box' },
+    container: { fontFamily: "'IBM Plex Sans', -apple-system, sans-serif", background: 'linear-gradient(135deg, #0c1220 0%, #1a1a2e 50%, #16213e 100%)', minHeight: '100vh', color: '#e0e0e0', padding: '24px', width: '100%', maxWidth: '100vw' },
     header: { textAlign: 'center', marginBottom: '32px' },
     title: { fontSize: '2.5rem', fontWeight: '300', background: 'linear-gradient(90deg, #f97316, #eab308)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', marginBottom: '8px' },
-    grid: { display: 'grid', gridTemplateColumns: '360px 1fr', gap: '24px', maxWidth: '1800px', margin: '0 auto' },
+    grid: { display: 'grid', gridTemplateColumns: '360px 1fr', gap: '24px', maxWidth: '1800px', margin: '0 auto', width: '100%' },
     panel: { background: 'rgba(255,255,255,0.03)', borderRadius: '16px', padding: '24px', border: '1px solid rgba(255,255,255,0.06)', height: 'fit-content', maxHeight: '90vh', overflowY: 'auto' },
     section: { fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '1.5px', color: '#f97316', marginBottom: '16px', fontWeight: '600', marginTop: '24px' },
     inputGroup: { marginBottom: '16px' },
@@ -4653,7 +4653,9 @@ export default function HomePurchaseOptimizer() {
     <div style={s.container} className="hpo-container">
       <style>{`
         /* ========== GLOBAL RESETS ========== */
-        html, body { overflow-x: hidden; color-scheme: dark; background: #0c1220; }
+        *, *::before, *::after { box-sizing: border-box; }
+        html, body { overflow-x: hidden; color-scheme: dark; background: #0c1220; max-width: 100vw; }
+        .hpo-container { max-width: 100vw; overflow-wrap: break-word; word-wrap: break-word; }
         .hpo-container input:not([type="range"]),
         .hpo-container select,
         .hpo-container textarea {
@@ -4676,10 +4678,11 @@ export default function HomePurchaseOptimizer() {
         /* ========== TABLET (900px) ========== */
         @media (max-width: 900px) {
           /* Layout */
-          .hpo-grid { grid-template-columns: 1fr !important; }
+          .hpo-grid { grid-template-columns: 1fr !important; gap: 16px !important; }
+          .hpo-grid > * { min-width: 0 !important; }
           .hpo-grid aside { max-height: none !important; }
-          .hpo-panel { padding: 20px !important; }
-          .hpo-card { padding: 20px !important; }
+          .hpo-panel { padding: 20px !important; min-width: 0 !important; max-width: 100% !important; }
+          .hpo-card { padding: 20px !important; min-width: 0 !important; max-width: 100% !important; }
           .hpo-plan-card { padding: 24px !important; }
 
           /* Tab bar: horizontal scroll */
@@ -4721,10 +4724,11 @@ export default function HomePurchaseOptimizer() {
           .hpo-mode-toggle { gap: 3px !important; padding: 3px !important; }
           .hpo-mode-toggle button { padding: 8px 4px !important; font-size: 0.65rem !important; }
           /* Layout */
-          .hpo-container { padding: 12px !important; }
-          .hpo-panel { padding: 16px !important; max-height: none !important; }
-          .hpo-card { padding: 16px !important; }
-          .hpo-plan-card { padding: 20px !important; }
+          .hpo-container { padding: 10px !important; }
+          .hpo-grid { gap: 12px !important; }
+          .hpo-panel { padding: 14px !important; max-height: none !important; }
+          .hpo-card { padding: 14px !important; }
+          .hpo-plan-card { padding: 16px !important; }
 
           /* Typography */
           .hpo-title { font-size: 1.8rem !important; }
@@ -4765,8 +4769,8 @@ export default function HomePurchaseOptimizer() {
           .hpo-tornado-row > div:first-child { text-align: left !important; }
           .hpo-tornado-legend { flex-direction: column !important; gap: 8px !important; align-items: flex-start !important; }
 
-          /* Matrix table: horizontal scroll */
-          .hpo-matrix-wrapper { overflow-x: auto !important; -webkit-overflow-scrolling: touch !important; }
+          /* Matrix table: horizontal scroll (override parent overflow:hidden) */
+          .hpo-matrix-wrapper { overflow-x: auto !important; overflow-y: visible !important; -webkit-overflow-scrolling: touch !important; }
           .hpo-matrix-wrapper table { min-width: 480px !important; }
           .hpo-matrix-wrapper th, .hpo-matrix-wrapper td { padding: 8px 6px !important; font-size: 0.75rem !important; }
 
@@ -4809,7 +4813,10 @@ export default function HomePurchaseOptimizer() {
         @media (max-width: 400px) {
           .hpo-mode-toggle button { padding: 7px 3px !important; font-size: 0.6rem !important; }
           .hpo-mode-toggle button span { font-size: 0.85rem !important; }
-          .hpo-container { padding: 8px !important; }
+          .hpo-container { padding: 6px !important; }
+          .hpo-grid { gap: 8px !important; }
+          .hpo-panel { padding: 10px !important; }
+          .hpo-card { padding: 10px !important; }
           .hpo-title { font-size: 1.5rem !important; }
           .hpo-card { padding: 12px !important; }
           .hpo-plan-card { padding: 14px !important; }
