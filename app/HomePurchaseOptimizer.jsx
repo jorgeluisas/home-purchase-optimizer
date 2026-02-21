@@ -762,7 +762,7 @@ export default function HomePurchaseOptimizer() {
     <div style={s.rentCompare}>
       <h4 style={{ color: '#fff', fontSize: '1rem', marginBottom: '16px', marginTop: 0 }}>📊 Monthly Non-Recoverable Cost vs. Rent</h4>
       
-      <div className="hpo-cost-table" style={{ display: 'grid', gridTemplateColumns: '1fr 120px 120px', gap: '4px 16px', fontSize: '0.85rem' }}>
+      <div className="hpo-cost-table" style={{ display: 'grid', gridTemplateColumns: '1fr 110px 110px', gap: '4px 12px', fontSize: '0.85rem' }}>
         <div style={{ color: '#8b8ba7', fontWeight: '600', paddingBottom: '8px', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>Component</div>
         <div style={{ color: '#8b8ba7', fontWeight: '600', textAlign: 'right', paddingBottom: '8px', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>Annual</div>
         <div style={{ color: '#8b8ba7', fontWeight: '600', textAlign: 'right', paddingBottom: '8px', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>Monthly</div>
@@ -773,9 +773,9 @@ export default function HomePurchaseOptimizer() {
           <div style={{ textAlign: 'right', padding: '6px 0' }}>{fmt$(nr.mortgageInterest/12)}</div>
         </>}
         {nr.monthlyPrincipal > 0 && <>
-          <div style={{ color: '#6b7280', padding: '4px 0 4px 20px', fontStyle: 'italic', fontSize: '0.8rem' }}>↳ Principal → Equity (not a cost)</div>
-          <div style={{ textAlign: 'right', padding: '4px 0', color: '#6b7280', fontStyle: 'italic', fontSize: '0.8rem' }}>{fmt$(nr.monthlyPrincipal * 12)}</div>
-          <div style={{ textAlign: 'right', padding: '4px 0', color: '#6b7280', fontStyle: 'italic', fontSize: '0.8rem' }}>{fmt$(nr.monthlyPrincipal)}</div>
+          <div className="hpo-principal-note" style={{ color: '#6b7280', padding: '4px 0 4px 16px', fontStyle: 'italic', fontSize: '0.78rem' }}>↳ Principal → Equity</div>
+          <div style={{ textAlign: 'right', padding: '4px 0', color: '#6b7280', fontStyle: 'italic', fontSize: '0.78rem' }}>{fmt$(nr.monthlyPrincipal * 12)}</div>
+          <div style={{ textAlign: 'right', padding: '4px 0', color: '#6b7280', fontStyle: 'italic', fontSize: '0.78rem' }}>{fmt$(nr.monthlyPrincipal)}</div>
         </>}
 
         {nr.marginInterest > 0 && <>
@@ -835,7 +835,7 @@ export default function HomePurchaseOptimizer() {
         <div style={{ textAlign: 'right', fontWeight: '700', fontSize: '1rem', padding: '8px 0', color: '#fff' }}>{fmt$(nr.netTotal/12)}</div>
       </div>
       
-      <div style={{ marginTop: '20px', padding: '16px', background: nr.netTotal/12 > rent ? 'rgba(248,113,113,0.1)' : 'rgba(74,222,128,0.1)', borderRadius: '8px', border: nr.netTotal/12 > rent ? '1px solid rgba(248,113,113,0.3)' : '1px solid rgba(74,222,128,0.3)' }}>
+      <div className="hpo-rent-compare" style={{ marginTop: '20px', padding: '16px', background: nr.netTotal/12 > rent ? 'rgba(248,113,113,0.1)' : 'rgba(74,222,128,0.1)', borderRadius: '8px', border: nr.netTotal/12 > rent ? '1px solid rgba(248,113,113,0.3)' : '1px solid rgba(74,222,128,0.3)' }}>
         <div className="hpo-three-col" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', textAlign: 'center' }}>
           <div>
             <div style={{ fontSize: '0.75rem', color: '#8b8ba7', marginBottom: '4px' }}>YOUR RENT</div>
@@ -4740,20 +4740,25 @@ export default function HomePurchaseOptimizer() {
           .hpo-tabs button { padding: 10px 14px !important; font-size: 0.78rem !important; white-space: nowrap !important; flex-shrink: 0 !important; }
 
           /* All multi-col grids -> stack or reduce */
-          .hpo-two-col { grid-template-columns: 1fr !important; }
-          .hpo-three-col { grid-template-columns: 1fr !important; }
+          .hpo-two-col { grid-template-columns: 1fr !important; gap: 12px !important; }
+          .hpo-three-col { grid-template-columns: repeat(3, 1fr) !important; gap: 6px !important; }
+          .hpo-three-col div > div:first-child { font-size: 0.6rem !important; }
+          .hpo-three-col div > div:last-child { font-size: 1rem !important; }
           .hpo-tax-rates { grid-template-columns: 1fr !important; }
           .hpo-preset-grid { grid-template-columns: 1fr !important; }
           .hpo-scenario-cards { grid-template-columns: 1fr !important; }
           .hpo-assumptions-grid { grid-template-columns: 1fr !important; }
           .hpo-margin-grid { grid-template-columns: 1fr !important; }
           .hpo-verdict-metrics { grid-template-columns: 1fr 1fr !important; }
-          .hpo-metrics { grid-template-columns: repeat(2, 1fr) !important; }
+          .hpo-metrics { grid-template-columns: repeat(2, 1fr) !important; gap: 10px !important; margin-bottom: 16px !important; }
+          .hpo-metrics > div { padding: 12px 10px !important; }
+          .hpo-metrics > div > div:first-child { font-size: 1.15rem !important; }
+          .hpo-metrics > div > div:last-child { font-size: 0.65rem !important; }
           .hpo-comfort-chips { grid-template-columns: repeat(3, 1fr) !important; }
           .hpo-spectrum-cards { grid-template-columns: 1fr !important; }
           .hpo-deep-dive-metrics { grid-template-columns: repeat(2, 1fr) !important; }
           .hpo-monthly-breakdown { grid-template-columns: repeat(2, 1fr) !important; }
-          .hpo-cost-table { grid-template-columns: 1fr 90px 90px !important; font-size: 0.78rem !important; }
+          .hpo-cost-table { grid-template-columns: 1fr 80px 80px !important; font-size: 0.75rem !important; gap: 2px 8px !important; }
 
           /* Tornado chart: stack label above bar */
           .hpo-tornado-row { grid-template-columns: 1fr !important; gap: 4px !important; }
@@ -4777,20 +4782,24 @@ export default function HomePurchaseOptimizer() {
           .hpo-chart-legend { font-size: 0.7rem !important; }
 
           /* Build Your Strategy mobile fixes */
-          .hpo-formula-hint { font-size: 0.7rem !important; text-align: left !important; }
-          .hpo-tracing-grid { gap: 3px 10px !important; font-size: 0.75rem !important; }
-          .hpo-equity-breakdown { font-size: 0.82rem !important; padding: 12px !important; }
-          .hpo-cashout-explainer { font-size: 0.75rem !important; padding: 10px !important; }
-          .hpo-cashout-explainer div { font-size: inherit !important; }
-          .hpo-tax-detail { font-size: 0.8rem !important; }
+          .hpo-formula-hint { font-size: 0.68rem !important; text-align: left !important; }
+          .hpo-formula-hint span { white-space: normal !important; }
+          .hpo-tracing-grid { gap: 3px 8px !important; font-size: 0.72rem !important; }
+          .hpo-equity-breakdown { font-size: 0.78rem !important; padding: 10px !important; }
+          .hpo-cashout-explainer { font-size: 0.72rem !important; padding: 10px !important; }
+          .hpo-cashout-explainer div { font-size: inherit !important; line-height: 1.4 !important; }
+          .hpo-tax-detail { font-size: 0.78rem !important; }
           .hpo-tax-detail > div { font-size: inherit !important; }
           .hpo-slider-label { font-size: 0.78rem !important; }
           .hpo-label-amount { display: block !important; font-size: 0.72rem !important; color: #8b8ba7 !important; }
           .hpo-configure-section .hpo-slider-label { margin-bottom: 2px !important; }
-          .hpo-strategy-cta { padding: 16px !important; }
-          .hpo-strategy-cta > div:first-child { font-size: 0.85rem !important; }
+          .hpo-strategy-cta { padding: 14px !important; }
+          .hpo-strategy-cta > div:first-child { font-size: 0.82rem !important; }
           .hpo-strategy-btns { flex-direction: column !important; }
-          .hpo-strategy-btns button { width: 100% !important; font-size: 0.9rem !important; padding: 12px 16px !important; }
+          .hpo-strategy-btns button { width: 100% !important; font-size: 0.88rem !important; padding: 12px 16px !important; }
+          .hpo-rent-compare { padding: 12px !important; }
+          .hpo-rent-compare .hpo-three-col div > div:last-child { font-size: 1rem !important; }
+
 
           /* Charts */
           .hpo-chart { height: 240px !important; }
@@ -4812,28 +4821,35 @@ export default function HomePurchaseOptimizer() {
           .hpo-comfort-chips { grid-template-columns: repeat(2, 1fr) !important; }
           .hpo-deep-dive-metrics { grid-template-columns: 1fr !important; }
           .hpo-monthly-breakdown { grid-template-columns: 1fr !important; }
-          .hpo-metrics { grid-template-columns: 1fr !important; }
+          .hpo-metrics { grid-template-columns: repeat(2, 1fr) !important; gap: 8px !important; }
+          .hpo-metrics > div { padding: 10px 8px !important; }
+          .hpo-metrics > div > div:first-child { font-size: 1rem !important; }
+          .hpo-metrics > div > div:last-child { font-size: 0.6rem !important; }
           .hpo-verdict-metrics { grid-template-columns: 1fr !important; }
           .hpo-preset-grid { grid-template-columns: 1fr !important; }
           .hpo-chart { height: 200px !important; }
           .hpo-tabs button { padding: 8px 10px !important; font-size: 0.72rem !important; }
-          .hpo-cost-table { grid-template-columns: 1fr 80px 80px !important; font-size: 0.72rem !important; gap: 2px 8px !important; }
+          .hpo-cost-table { grid-template-columns: 1fr 70px 70px !important; font-size: 0.68rem !important; gap: 2px 6px !important; }
+          .hpo-three-col { gap: 4px !important; }
+          .hpo-three-col div > div:first-child { font-size: 0.55rem !important; }
+          .hpo-three-col div > div:last-child { font-size: 0.88rem !important; }
 
           /* Build Your Strategy extra-small */
-          .hpo-formula-hint { font-size: 0.62rem !important; }
+          .hpo-formula-hint { font-size: 0.6rem !important; }
           .hpo-formula-hint span { white-space: normal !important; }
-          .hpo-tracing-grid { gap: 2px 6px !important; font-size: 0.68rem !important; }
-          .hpo-cashout-explainer { font-size: 0.7rem !important; padding: 8px !important; }
+          .hpo-tracing-grid { gap: 2px 6px !important; font-size: 0.65rem !important; }
+          .hpo-cashout-explainer { font-size: 0.68rem !important; padding: 8px !important; }
           .hpo-cashout-explainer div { font-size: inherit !important; }
-          .hpo-tax-detail { font-size: 0.72rem !important; }
+          .hpo-tax-detail { font-size: 0.7rem !important; }
           .hpo-tax-detail > div { font-size: inherit !important; }
-          .hpo-equity-breakdown { font-size: 0.72rem !important; padding: 8px !important; }
-          .hpo-slider-label { font-size: 0.72rem !important; }
-          .hpo-label-amount { font-size: 0.65rem !important; }
-          .hpo-strategy-cta { padding: 12px !important; border-radius: 10px !important; }
-          .hpo-strategy-btns button { font-size: 0.82rem !important; padding: 10px 12px !important; }
-          .hpo-matrix-wrapper table { min-width: 440px !important; }
-          .hpo-matrix-wrapper th, .hpo-matrix-wrapper td { padding: 6px 4px !important; font-size: 0.68rem !important; }
+          .hpo-equity-breakdown { font-size: 0.7rem !important; padding: 8px !important; }
+          .hpo-slider-label { font-size: 0.68rem !important; }
+          .hpo-label-amount { font-size: 0.6rem !important; }
+          .hpo-strategy-cta { padding: 10px !important; border-radius: 10px !important; }
+          .hpo-strategy-btns button { font-size: 0.8rem !important; padding: 10px 12px !important; }
+          .hpo-matrix-wrapper table { min-width: 400px !important; }
+          .hpo-matrix-wrapper th, .hpo-matrix-wrapper td { padding: 5px 3px !important; font-size: 0.65rem !important; }
+          .hpo-rent-compare .hpo-three-col div > div:last-child { font-size: 0.88rem !important; }
         }
       `}</style>
       <header style={s.header}>
