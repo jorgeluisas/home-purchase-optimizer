@@ -1338,7 +1338,7 @@ export default function HomePurchaseOptimizer() {
               <div style={{ fontSize: '1.1rem', fontWeight: '600', color: '#fff' }}>{fmt$(monthlyRent)}/mo</div>
             </div>
           </div>
-          <button style={{ ...s.btn, width: 'auto', padding: '16px 48px' }} onClick={handleOptimize}>🚀 Run Optimization</button>
+          <button style={{ ...s.btn, width: 'auto', padding: '16px 48px' }} onClick={() => handleOptimize()}>🚀 Run Optimization</button>
           <p style={{ color: '#8b8ba7', fontSize: '0.78rem', marginTop: '12px' }}>
             Not sure about the home price? Start with the <button onClick={() => setActiveTab('afford')} style={{ background: 'none', border: 'none', color: '#f97316', cursor: 'pointer', fontSize: '0.78rem', textDecoration: 'underline', padding: 0 }}>What Can I Buy?</button> tab first.
           </p>
@@ -3811,7 +3811,7 @@ export default function HomePurchaseOptimizer() {
           <p style={{ color: '#8b8ba7', marginBottom: '32px' }}>
             Sensitivity analysis shows how changes in assumptions affect your break-even year.
           </p>
-          <button style={{ ...s.btn, width: 'auto', padding: '16px 48px' }} onClick={handleOptimize}>🚀 Run Optimization</button>
+          <button style={{ ...s.btn, width: 'auto', padding: '16px 48px' }} onClick={() => handleOptimize()}>🚀 Run Optimization</button>
         </div>
       );
     }
@@ -5153,7 +5153,7 @@ export default function HomePurchaseOptimizer() {
                   opacity: isFormValid ? 1 : 0.5,
                   cursor: isFormValid ? 'pointer' : 'not-allowed'
                 }}
-                onClick={handleOptimize}
+                onClick={() => handleOptimize()}
                 disabled={!isFormValid}
               >
                 🚀 Run Optimization
